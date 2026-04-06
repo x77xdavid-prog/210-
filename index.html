@@ -280,7 +280,7 @@ function BedCard({ bed, settings, onClick, onQuickDischarge }) {
             <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 4 }}>입원일 {bed.patient.admittedDate}</div>
           )}
           {bed.patient.dischargeDate && (
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 4 }}>퇴원예정일 {bed.patient.dischargeDate} ・ {getDdayDisplay(bed.patient.dischargeDate)}</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 4 }}>퇴원일 {bed.patient.dischargeDate} ・ {getDdayDisplay(bed.patient.dischargeDate)}</div>
           )}
           {bed.patient.notes && (
             <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 4, whiteSpace: 'normal', wordBreak: 'break-word' }}>메모 {bed.patient.notes}</div>
