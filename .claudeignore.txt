@@ -1,0 +1,50 @@
+node_modules/
+dist/
+.next/
+*.log
+.env
+# 의존성 패키지 (용량이 매우 커서 반드시 제외)
+node_modules/
+
+# 빌드 결과물
+dist/
+.next/
+build/
+out/
+
+# 로그 파일
+*.log
+npm-debug.log*
+
+# 환경 변수 및 비밀번호 (보안을 위해 필수!)
+.env
+.env.local
+*.pem
+*.key
+
+# OS 설정 파일
+.DS_Store
+Thumbs.db
+# 의존성
+node_modules/
+
+# 빌드 결과물
+dist/
+build/
+.next/
+
+# 환경변수 (보안)
+.env
+.env.local
+.env.production
+
+# 로그
+*.log
+logs/
+
+# DB 데이터
+*.sql.bak
+pgdata/
+
+# 캐시
+.cache/
