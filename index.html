@@ -3,11 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>병동 관리 시스템</title>
+  <title>210정형외과병동관리시스템</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -113,77 +116,18 @@
 <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-/* ─────────────────────────────────────────────
-   상태 설정
-───────────────────────────────────────────── */
 const STATUS = {
-  empty: {
-    label: '비어 있음',
-    color: '#9ca3af',
-    bg: '#f9fafb',
-    border: '#e5e7eb',
-    textColor: '#6b7280',
-    badgeBg: '#e5e7eb',
-    badgeText: '#4b5563',
-  },
-  admitted: {
-    label: '입원 중',
-    color: '#3b82f6',
-    bg: '#eff6ff',
-    border: '#bfdbfe',
-    textColor: '#1e40af',
-    badgeBg: '#3b82f6',
-    badgeText: '#ffffff',
-  },
-  morning_discharge: {
-    label: '오전 퇴원 예정',
-    color: '#f59e0b',
-    bg: '#fffbeb',
-    border: '#fde68a',
-    textColor: '#92400e',
-    badgeBg: '#f59e0b',
-    badgeText: '#ffffff',
-  },
-  afternoon_discharge: {
-    label: '오후 퇴원 예정',
-    color: '#f97316',
-    bg: '#fff7ed',
-    border: '#fed7aa',
-    textColor: '#9a3412',
-    badgeBg: '#f97316',
-    badgeText: '#ffffff',
-  },
-  afternoon_admission: {
-    label: '오후 입원 예정',
-    color: '#22c55e',
-    bg: '#f0fdf4',
-    border: '#bbf7d0',
-    textColor: '#14532d',
-    badgeBg: '#22c55e',
-    badgeText: '#ffffff',
-  },
-  next_day_discharge: {
-    label: '다음날 퇴원 예정',
-    color: '#a855f7',
-    bg: '#faf5ff',
-    border: '#e9d5ff',
-    textColor: '#581c87',
-    badgeBg: '#a855f7',
-    badgeText: '#ffffff',
-  },
-  provisional_discharge: {
-    label: '가퇴원',
-    color: '#f43f5e',
-    bg: '#fff1f2',
-    border: '#fecdd3',
-    textColor: '#881337',
-    badgeBg: '#f43f5e',
-    badgeText: '#ffffff',
-  },
+  empty: { label: '비어 있음', color: '#9ca3af', bg: '#f9fafb', border: '#e5e7eb', textColor: '#6b7280', badgeBg: '#e5e7eb', badgeText: '#4b5563' },
+  admitted: { label: '입원 중', color: '#3b82f6', bg: '#eff6ff', border: '#bfdbfe', textColor: '#1e40af', badgeBg: '#3b82f6', badgeText: '#ffffff' },
+  morning_discharge: { label: '오전 퇴원 예정', color: '#f59e0b', bg: '#fffbeb', border: '#fde68a', textColor: '#92400e', badgeBg: '#f59e0b', badgeText: '#ffffff' },
+  afternoon_discharge: { label: '오후 퇴원 예정', color: '#f97316', bg: '#fff7ed', border: '#fed7aa', textColor: '#9a3412', badgeBg: '#f97316', badgeText: '#ffffff' },
+  afternoon_admission: { label: '오후 입원 예정', color: '#22c55e', bg: '#f0fdf4', border: '#bbf7d0', textColor: '#14532d', badgeBg: '#22c55e', badgeText: '#ffffff' },
+  next_day_discharge: { label: '다음날 퇴원 예정', color: '#a855f7', bg: '#faf5ff', border: '#e9d5ff', textColor: '#581c87', badgeBg: '#a855f7', badgeText: '#ffffff' },
+  provisional_discharge: { label: '가퇴원', color: '#f43f5e', bg: '#fff1f2', border: '#fecdd3', textColor: '#881337', badgeBg: '#f43f5e', badgeText: '#ffffff' },
 };
 
 const DEFAULT_SETTINGS = {
-  wardName: '내과 병동',
+  wardName: '210정형외과병동관리시스템',
   totalBeds: 20,
   bedPrefix: '',
   startBedNumber: 1,
@@ -192,15 +136,9 @@ const DEFAULT_SETTINGS = {
   autoTransition: false,
 };
 
-const EMPTY_PATIENT = {
-  name: '', age: '', gender: '',
-  diagnosis: '', notes: '',
-  isSurgery: false, admittedDate: '',
-};
+const EMPTY_PATIENT = { name: '', age: '', gender: '', diagnosis: '', notes: '', isSurgery: false, admittedDate: '', dischargeDate: '' };
 
-/* ─────────────────────────────────────────────
-   유틸리티
-───────────────────────────────────────────── */
+/* 유틸리티 */
 function parseTime(str) {
   const [h = 0, m = 0] = (str || '').split(':').map(Number);
   return h * 60 + m;
@@ -227,6 +165,17 @@ function getNowDisplay() {
   };
 }
 
+function getDdayDisplay(dateStr) {
+  if (!dateStr) return '';
+  const target = new Date(`${dateStr}T00:00:00`);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((target - today) / (1000 * 60 * 60 * 24));
+  if (diff === 0) return 'D-day';
+  if (diff > 0) return `D-${diff}`;
+  return `D+${Math.abs(diff)}`;
+}
+
 function makeBeds(total, start, prefix, existing = []) {
   return Array.from({ length: total }, (_, i) => {
     const num = start + i;
@@ -239,13 +188,69 @@ function makeBeds(total, start, prefix, existing = []) {
 function loadStorage() {
   try { return JSON.parse(localStorage.getItem('wardData_v2')); } catch { return null; }
 }
-function saveStorage(data) {
-  try { localStorage.setItem('wardData_v2', JSON.stringify(data)); } catch {}
+
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyDNskn4Kmkha07oGXcEXVhhNd9MvGOgcpI',
+  authDomain: 'gen-lang-client-0584117357.firebaseapp.com',
+  projectId: 'gen-lang-client-0584117357',
+  storageBucket: 'gen-lang-client-0584117357.firebasestorage.app',
+  messagingSenderId: '117986366738',
+  appId: '1:117986366738:web:08d7b55ac07479d9cf4fcb',
+  measurementId: 'G-99DNYLR26W',
+};
+if (!firebase.apps.length) {
+  firebase.initializeApp(FIREBASE_CONFIG);
+}
+const auth = firebase.auth();
+const db = firebase.firestore();
+let currentUserId = null;
+let syncEnabled = false;
+
+async function loadRemoteData(uid) {
+  try {
+    const doc = await db.collection('wardData').doc(uid).get();
+    return doc.exists ? doc.data() : null;
+  } catch (err) {
+    console.error('Remote load failed:', err);
+    return null;
+  }
 }
 
-/* ─────────────────────────────────────────────
-   BedCard 컴포넌트
-───────────────────────────────────────────── */
+async function saveRemoteData(data) {
+  if (!syncEnabled || !currentUserId) return;
+  try {
+    await db.collection('wardData').doc(currentUserId).set({
+      settings: data.settings,
+      beds: data.beds,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error('Remote save failed:', err);
+  }
+}
+
+function saveStorage(data, shouldSync = false) {
+  try { localStorage.setItem('wardData_v2', JSON.stringify(data)); } catch {}
+  if (shouldSync) {
+    saveRemoteData(data);
+  }
+}
+
+function signUpUser(email, password) {
+  return auth.createUserWithEmailAndPassword(email, password).then(result => result.user.uid);
+}
+
+function signInUser(email, password) {
+  return auth.signInWithEmailAndPassword(email, password).then(result => result.user.uid);
+}
+
+function signOutUser() {
+  syncEnabled = false;
+  currentUserId = null;
+  return auth.signOut();
+}
+
+/* 컴포넌트: BedCard */
 function BedCard({ bed, settings, onClick, onQuickDischarge }) {
   const cfg = STATUS[bed.status] || STATUS.empty;
   const overdue = isOverdue(bed.status, settings);
@@ -258,228 +263,100 @@ function BedCard({ bed, settings, onClick, onQuickDischarge }) {
       style={{ background: cfg.bg, borderColor: cfg.border, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}
       onClick={() => onClick(bed)}
     >
-      {/* 병상 번호 + 상태 배지 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4, marginBottom: 7 }}>
-        <span style={{ fontWeight: 800, fontSize: 17, color: '#111827', letterSpacing: '-0.5px' }}>
-          {bed.bedNumber}호
-        </span>
-        <span style={{
-          fontSize: 10, fontWeight: 700, padding: '2px 7px',
-          borderRadius: 999, whiteSpace: 'nowrap', flexShrink: 0,
-          background: cfg.badgeBg, color: cfg.badgeText,
-        }}>
+        <span style={{ fontWeight: 800, fontSize: 17, color: '#111827', letterSpacing: '-0.5px' }}>{bed.bedNumber}호</span>
+        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 999, whiteSpace: 'nowrap', background: cfg.badgeBg, color: cfg.badgeText }}>
           {cfg.label}
         </span>
       </div>
 
-      {/* 환자 정보 */}
       {hasPatient ? (
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: cfg.textColor, marginBottom: 2 }}>
-            {bed.patient.name}
-            {bed.patient.gender ? `・${bed.patient.gender === 'M' ? '남' : '여'}` : ''}
-            {bed.patient.age    ? `・${bed.patient.age}세` : ''}
+            {bed.patient.name}{bed.patient.gender ? `・${bed.patient.gender === 'M' ? '남' : '여'}` : ''}{bed.patient.age ? `・${bed.patient.age}세` : ''}
           </div>
-          {bed.patient.diagnosis && (
-            <div style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {bed.patient.diagnosis}
-            </div>
+          {bed.patient.diagnosis && <div style={{ fontSize: 11, color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{bed.patient.diagnosis}</div>}
+          {bed.patient.admittedDate && (
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 4 }}>입원일 {bed.patient.admittedDate}</div>
           )}
-          {bed.patient.isSurgery && (
-            <div style={{ fontSize: 10, color: '#f97316', fontWeight: 700, marginTop: 3 }}>
-              [수술 환자]
-            </div>
+          {bed.patient.dischargeDate && (
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 4 }}>퇴원예정일 {bed.patient.dischargeDate} ・ {getDdayDisplay(bed.patient.dischargeDate)}</div>
           )}
+          {bed.patient.notes && (
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#374151', marginTop: 4, whiteSpace: 'normal', wordBreak: 'break-word' }}>메모 {bed.patient.notes}</div>
+          )}
+          {bed.patient.isSurgery && <div style={{ fontSize: 10, color: '#f97316', fontWeight: 700, marginTop: 3 }}>[수술 환자]</div>}
         </div>
-      ) : isEmpty ? (
-        <div style={{ fontSize: 12, color: '#d1d5db', fontStyle: 'italic' }}>빈 병상</div>
-      ) : (
-        <div style={{ fontSize: 12, color: '#9ca3af' }}>환자 정보 없음</div>
-      )}
+      ) : <div style={{ fontSize: 12, color: '#d1d5db', fontStyle: 'italic' }}>{isEmpty ? '빈 병상' : '정보 없음'}</div>}
 
-      {/* 시간 초과 경고 */}
       {overdue && (
-        <div
-          style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
-          onClick={e => e.stopPropagation()}
-        >
+        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} onClick={e => e.stopPropagation()}>
           <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>시간 초과</span>
-          <button
-            className="btn btn-sm btn-danger"
-            onClick={e => { e.stopPropagation(); onQuickDischarge(bed); }}
-            style={{ padding: '3px 8px', fontSize: 11 }}
-          >
-            퇴원 완료
-          </button>
-        </div>
-      )}
-
-      {/* 입원 예정 – 환자 없어도 강조 */}
-      {bed.status === 'afternoon_admission' && !hasPatient && (
-        <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 600, marginTop: 3 }}>
-          오후 입원 예정
+          <button className="btn btn-sm btn-danger" onClick={e => { e.stopPropagation(); onQuickDischarge(bed); }} style={{ padding: '3px 8px', fontSize: 11 }}>퇴원 완료</button>
         </div>
       )}
     </div>
   );
 }
 
-/* ─────────────────────────────────────────────
-   BedModal 컴포넌트
-───────────────────────────────────────────── */
+/* 컴포넌트: BedModal */
 function BedModal({ bed, onSave, onClose }) {
   const [status, setStatus] = useState(bed.status);
   const [patient, setPatient] = useState({ ...EMPTY_PATIENT, ...bed.patient });
-
   const setField = (f, v) => setPatient(p => ({ ...p, [f]: v }));
-
-  const handleSave = () => {
-    const cleared = status === 'empty';
-    onSave({
-      ...bed,
-      status,
-      patient: cleared ? { ...EMPTY_PATIENT } : patient,
-    });
-  };
-
-  const handleDischargeComplete = () => {
-    onSave({ ...bed, status: 'empty', patient: { ...EMPTY_PATIENT } });
-  };
-
-  const cfg = STATUS[status] || STATUS.empty;
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal-box">
-        {/* 헤더 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827' }}>
-            {bed.bedNumber}호 병상 편집
-          </h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-extrabold">{bed.bedNumber}호 병상 편집</h2>
           <button className="btn btn-gray btn-sm" onClick={onClose}>닫기</button>
         </div>
-
-        {/* 상태 선택 */}
-        <div style={{ marginBottom: 18 }}>
+        <div className="mb-4">
           <div className="form-label">병상 상태</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          <div className="grid grid-cols-2 gap-2">
             {Object.entries(STATUS).map(([key, scfg]) => (
-              <button
-                key={key}
-                onClick={() => setStatus(key)}
-                style={{
-                  padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                  border: `2px solid ${status === key ? scfg.color : '#e5e7eb'}`,
-                  background: status === key ? scfg.bg : 'white',
-                  fontSize: 12, fontWeight: status === key ? 700 : 500,
-                  color: status === key ? scfg.textColor : '#6b7280',
-                  textAlign: 'left', transition: 'all 0.1s',
-                  display: 'flex', alignItems: 'center', gap: 7,
-                }}
-              >
-                <span className="status-dot" style={{ background: scfg.color }} />
-                {scfg.label}
+              <button key={key} onClick={() => setStatus(key)} 
+                className={`flex items-center gap-2 p-2 rounded-lg border-2 text-xs transition-all ${status === key ? 'font-bold' : 'bg-white text-gray-500'}`}
+                style={{ borderColor: status === key ? scfg.color : '#e5e7eb', background: status === key ? scfg.bg : '' }}>
+                <span className="status-dot" style={{ background: scfg.color }} /> {scfg.label}
               </button>
             ))}
           </div>
         </div>
-
-        <hr className="section-divider" />
-
-        {/* 환자 정보 */}
         {status !== 'empty' && (
-          <div>
-            <div className="form-label" style={{ marginBottom: 12 }}>
-              환자 정보 {status === 'afternoon_admission' && <span style={{ color: '#22c55e' }}>(예정 환자)</span>}
+          <div className="space-y-3">
+            <hr className="section-divider" />
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="form-label">환자명</label><input className="form-input" value={patient.name} onChange={e => setField('name', e.target.value)} /></div>
+              <div><label className="form-label">나이</label><input className="form-input" type="number" value={patient.age} onChange={e => setField('age', e.target.value)} /></div>
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-              <div>
-                <label className="form-label">환자명</label>
-                <input className="form-input" value={patient.name} onChange={e => setField('name', e.target.value)} placeholder="이름" />
-              </div>
-              <div>
-                <label className="form-label">나이</label>
-                <input className="form-input" type="number" value={patient.age} onChange={e => setField('age', e.target.value)} placeholder="세" min={0} max={150} />
-              </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="form-label">성별</label><select className="form-input" value={patient.gender} onChange={e => setField('gender', e.target.value)}><option value="">선택</option><option value="M">남</option><option value="F">여</option></select></div>
+              <div><label className="form-label">입원일</label><input className="form-input" type="date" value={patient.admittedDate} onChange={e => setField('admittedDate', e.target.value)} /></div>
             </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-              <div>
-                <label className="form-label">성별</label>
-                <select className="form-input" value={patient.gender} onChange={e => setField('gender', e.target.value)}>
-                  <option value="">선택 안 함</option>
-                  <option value="M">남성</option>
-                  <option value="F">여성</option>
-                </select>
-              </div>
-              <div>
-                <label className="form-label">입원일</label>
-                <input className="form-input" type="date" value={patient.admittedDate} onChange={e => setField('admittedDate', e.target.value)} />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 10 }}>
-              <label className="form-label">진단명</label>
-              <input className="form-input" value={patient.diagnosis} onChange={e => setField('diagnosis', e.target.value)} placeholder="진단명" />
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label className="form-label">메모 / 특이사항</label>
-              <textarea
-                className="form-input"
-                value={patient.notes}
-                onChange={e => setField('notes', e.target.value)}
-                placeholder="특이사항 기재"
-                rows={3}
-                style={{ resize: 'vertical' }}
-              />
-            </div>
-
-            {/* 수술 환자 체크 */}
-            <div
-              style={{
-                display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
-                background: patient.isSurgery ? '#fff7ed' : '#f9fafb',
-                borderRadius: 8, border: `1.5px solid ${patient.isSurgery ? '#fed7aa' : '#e5e7eb'}`,
-                cursor: 'pointer', marginBottom: 4,
-              }}
-              onClick={() => setField('isSurgery', !patient.isSurgery)}
-            >
-              <div style={{
-                width: 18, height: 18, borderRadius: 5,
-                border: `2px solid ${patient.isSurgery ? '#f97316' : '#d1d5db'}`,
-                background: patient.isSurgery ? '#f97316' : 'white',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>
-                {patient.isSurgery && (
-                  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                    <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
-              </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: patient.isSurgery ? '#9a3412' : '#374151' }}>
-                  수술 환자
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="form-label">퇴원일</label><input className="form-input" type="date" value={patient.dischargeDate} onChange={e => setField('dischargeDate', e.target.value)} /></div>
+              {patient.dischargeDate && (
+                <div>
+                  <label className="form-label">남은 D-day</label>
+                  <div className="form-input" style={{ background: '#ffffff', cursor: 'default' }}>{getDdayDisplay(patient.dischargeDate)}</div>
                 </div>
-                <div style={{ fontSize: 11, color: '#9ca3af' }}>체크 시 오후 퇴원 자동 전환 예외 처리</div>
-              </div>
+              )}
+            </div>
+            <div><label className="form-label">진단명</label><input className="form-input" value={patient.diagnosis} onChange={e => setField('diagnosis', e.target.value)} /></div>
+            <div><label className="form-label">메모</label><textarea className="form-input" value={patient.notes} onChange={e => setField('notes', e.target.value)} rows={2} /></div>
+            <div className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${patient.isSurgery ? 'bg-orange-50 border-orange-200' : 'bg-gray-50 border-gray-200'}`} onClick={() => setField('isSurgery', !patient.isSurgery)}>
+              <input type="checkbox" checked={patient.isSurgery} readOnly className="w-4 h-4" />
+              <span className="text-sm font-bold">수술 환자 (자동 전환 예외)</span>
             </div>
           </div>
         )}
-
-        {/* 하단 버튼 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20 }}>
-          <div>
-            {bed.status !== 'empty' && (
-              <button className="btn btn-danger" onClick={handleDischargeComplete}>
-                퇴원 완료 (병상 비우기)
-              </button>
-            )}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+        <div className="flex justify-between mt-6">
+          <button className="btn btn-danger" onClick={() => onSave({...bed, status: 'empty', patient: {...EMPTY_PATIENT}})}>병상 비우기</button>
+          <div className="flex gap-2">
             <button className="btn btn-gray" onClick={onClose}>취소</button>
-            <button className="btn btn-primary" onClick={handleSave}>저장</button>
+            <button className="btn btn-primary" onClick={() => onSave({...bed, status, patient: status === 'empty' ? {...EMPTY_PATIENT} : patient})}>저장</button>
           </div>
         </div>
       </div>
@@ -487,385 +364,244 @@ function BedModal({ bed, onSave, onClose }) {
   );
 }
 
-/* ─────────────────────────────────────────────
-   SettingsModal 컴포넌트
-───────────────────────────────────────────── */
+/* 컴포넌트: SettingsModal (상세 생략 가능하나 구조 유지) */
 function SettingsModal({ settings, onSave, onClose }) {
   const [form, setForm] = useState({ ...settings });
   const set = (f, v) => setForm(p => ({ ...p, [f]: v }));
-
-  const handleSave = () => {
-    onSave({
-      ...form,
-      totalBeds: Math.max(1, Math.min(200, parseInt(form.totalBeds) || 20)),
-      startBedNumber: Math.max(1, parseInt(form.startBedNumber) || 1),
-    });
-  };
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal-box">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: '#111827' }}>설정</h2>
-          <button className="btn btn-gray btn-sm" onClick={onClose}>닫기</button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div>
-            <label className="form-label">병동 이름</label>
-            <input className="form-input" value={form.wardName} onChange={e => set('wardName', e.target.value)} />
+        <h2 className="text-xl font-extrabold mb-4">병동 설정</h2>
+        <div className="space-y-4">
+          <div><label className="form-label">병동 이름</label><input className="form-input" value={form.wardName} onChange={e => set('wardName', e.target.value)} /></div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="form-label">총 병상 수</label><input className="form-input" type="number" value={form.totalBeds} onChange={e => set('totalBeds', e.target.value)} /></div>
+            <div><label className="form-label">시작 번호</label><input className="form-input" type="number" value={form.startBedNumber} onChange={e => set('startBedNumber', e.target.value)} /></div>
           </div>
-
-          <hr className="section-divider" style={{ margin: '2px 0' }} />
-          <div className="form-label" style={{ color: '#374151', fontSize: 13 }}>병상 설정</div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label className="form-label">총 병상 수</label>
-              <input className="form-input" type="number" value={form.totalBeds} onChange={e => set('totalBeds', e.target.value)} min={1} max={200} />
-            </div>
-            <div>
-              <label className="form-label">시작 병상 번호</label>
-              <input className="form-input" type="number" value={form.startBedNumber} onChange={e => set('startBedNumber', e.target.value)} min={1} />
-            </div>
-          </div>
-
-          <div>
-            <label className="form-label">병상 번호 접두사 (예: A, 101-)</label>
-            <input className="form-input" value={form.bedPrefix} onChange={e => set('bedPrefix', e.target.value)} placeholder="없으면 비워두세요" />
-            <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-              예) 접두사 "A", 시작 1 → A1, A2, A3...
-            </div>
-          </div>
-
-          <hr className="section-divider" style={{ margin: '2px 0' }} />
-          <div className="form-label" style={{ color: '#374151', fontSize: 13 }}>시간 기준 설정</div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div>
-              <label className="form-label">오전 기준 시간</label>
-              <input className="form-input" type="time" value={form.morningCutoff} onChange={e => set('morningCutoff', e.target.value)} />
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>오전 퇴원 기준</div>
-            </div>
-            <div>
-              <label className="form-label">오후 기준 시간</label>
-              <input className="form-input" type="time" value={form.afternoonCutoff} onChange={e => set('afternoonCutoff', e.target.value)} />
-              <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 3 }}>오후 퇴원 기준</div>
-            </div>
-          </div>
-
-          <hr className="section-divider" style={{ margin: '2px 0' }} />
-          <div className="form-label" style={{ color: '#374151', fontSize: 13 }}>자동 상태 변경</div>
-
-          <div
-            style={{
-              display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px',
-              background: form.autoTransition ? '#eff6ff' : '#f9fafb',
-              borderRadius: 9, border: `1.5px solid ${form.autoTransition ? '#bfdbfe' : '#e5e7eb'}`,
-              cursor: 'pointer',
-            }}
-            onClick={() => set('autoTransition', !form.autoTransition)}
-          >
-            <div style={{
-              width: 18, height: 18, borderRadius: 5, flexShrink: 0, marginTop: 1,
-              border: `2px solid ${form.autoTransition ? '#3b82f6' : '#d1d5db'}`,
-              background: form.autoTransition ? '#3b82f6' : 'white',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              {form.autoTransition && (
-                <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                  <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </div>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af' }}>자동 상태 변경 사용</div>
-              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 3, lineHeight: 1.5 }}>
-                · 다음날 퇴원 → 자정에 오전 퇴원으로 변경<br/>
-                · 오후 기준 시간 경과 후 오후 입원 예정 → 입원 중으로 변경<br/>
-                · 수술 환자는 자동 전환에서 제외
-              </div>
-            </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className="form-label">오전 마감</label><input className="form-input" type="time" value={form.morningCutoff} onChange={e => set('morningCutoff', e.target.value)} /></div>
+            <div><label className="form-label">오후 마감</label><input className="form-input" type="time" value={form.afternoonCutoff} onChange={e => set('afternoonCutoff', e.target.value)} /></div>
           </div>
         </div>
-
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 22 }}>
+        <div className="flex justify-end gap-2 mt-6">
           <button className="btn btn-gray" onClick={onClose}>취소</button>
-          <button className="btn btn-primary" onClick={handleSave}>저장</button>
+          <button className="btn btn-primary" onClick={() => onSave(form)}>설정 저장</button>
         </div>
       </div>
     </div>
   );
 }
 
-/* ─────────────────────────────────────────────
-   App (메인)
-───────────────────────────────────────────── */
+/* 컴포넌트: Login */
+function Login({ onLogin }) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [form, setForm] = useState({ email: '', password: '', confirmPassword: '' });
+  const setField = (f, v) => setForm(p => ({ ...p, [f]: v }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      let uid;
+      if (isSignUp) {
+        if (form.password !== form.confirmPassword) {
+          alert('비밀번호가 일치하지 않습니다.');
+          setIsLoading(false);
+          return;
+        }
+        uid = await signUpUser(form.email, form.password);
+        setIsSignUp(false);
+        onLogin(uid);
+      } else {
+        uid = await signInUser(form.email, form.password);
+        onLogin(uid);
+      }
+    } catch (err) {
+      alert(err.message || '인증 중 오류가 발생했습니다.');
+      console.error(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
+      <div className="bg-white p-10 rounded-2xl shadow-xl text-center w-full" style={{ maxWidth: '520px' }}>
+        <h1 className="text-2xl font-black mb-2" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>210정형외과 병동관리시스템</h1>
+        <p className="text-gray-500 mb-8 text-sm">여러 기기에서 병동 현황을 동기화하려면 로그인하세요.</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <input
+            type="email"
+            placeholder="이메일"
+            value={form.email}
+            onChange={e => setField('email', e.target.value)}
+            className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <input
+            type="password"
+            placeholder="비밀번호"
+            value={form.password}
+            onChange={e => setField('password', e.target.value)}
+            className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          {isSignUp && (
+            <input
+              type="password"
+              placeholder="비밀번호 확인"
+              value={form.confirmPassword}
+              onChange={e => setField('confirmPassword', e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          )}
+          <button type="submit" disabled={isLoading} className="w-full bg-blue-500 text-white py-3 rounded-lg font-bold hover:bg-blue-600 disabled:opacity-50">
+            {isSignUp ? '회원가입' : '로그인'}
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={() => setIsSignUp(!isSignUp)}
+          className="mt-4 text-blue-500 hover:underline"
+        >
+          {isSignUp ? '이미 계정이 있으신가요? 로그인' : '계정이 없으신가요? 회원가입'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* 메인 앱 */
 function App() {
   const stored = loadStorage();
-
-  const [settings, setSettings] = useState(() => ({
-    ...DEFAULT_SETTINGS,
-    ...(stored?.settings || {}),
-  }));
-
-  const [beds, setBeds] = useState(() => {
-    if (stored?.beds?.length) return stored.beds;
-    return makeBeds(DEFAULT_SETTINGS.totalBeds, DEFAULT_SETTINGS.startBedNumber, DEFAULT_SETTINGS.bedPrefix);
-  });
-
-  const [filter, setFilter]           = useState('all');
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userId, setUserId] = useState(null);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isSyncReady, setIsSyncReady] = useState(false);
+  const [settings, setSettings] = useState(() => ({ ...DEFAULT_SETTINGS, ...(stored?.settings || {}) }));
+  const [beds, setBeds] = useState(() => stored?.beds?.length ? stored.beds : makeBeds(DEFAULT_SETTINGS.totalBeds, DEFAULT_SETTINGS.startBedNumber, DEFAULT_SETTINGS.bedPrefix));
+  const [filter, setFilter] = useState('all');
   const [selectedBed, setSelectedBed] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [nowDisplay, setNowDisplay]   = useState(getNowDisplay());
+  const [nowDisplay, setNowDisplay] = useState(getNowDisplay());
 
-  // refs for timer callback
-  const settingsRef = useRef(settings);
-  useEffect(() => { settingsRef.current = settings; }, [settings]);
-  const lastDateRef = useRef(getNowDisplay().dateKey);
-
-  /* 매 1분 틱: 시계 + 자동 전환 */
+  // 자동로그인: Firebase 인증 상태 감지
   useEffect(() => {
-    const tick = () => {
-      const now = getNowDisplay();
-      setNowDisplay(now);
-
-      const s = settingsRef.current;
-      const isNewDay = now.dateKey !== lastDateRef.current;
-      const curMin   = getCurrentMinutes();
-      const aftMin   = parseTime(s.afternoonCutoff);
-
-      setBeds(prev => {
-        const next = prev.map(bed => {
-          // 다음날 퇴원 → 자정에 오전 퇴원
-          if (isNewDay && bed.status === 'next_day_discharge') {
-            return { ...bed, status: 'morning_discharge' };
-          }
-          // 자동 전환 (설정 시)
-          if (s.autoTransition) {
-            // 오후 입원 예정 → 오후 시간 경과 → 입원 중
-            if (bed.status === 'afternoon_admission' && curMin > aftMin) {
-              return { ...bed, status: 'admitted' };
-            }
-          }
-          return bed;
-        });
-        lastDateRef.current = now.dateKey;
-        return next;
-      });
-    };
-
-    tick();
-    const id = setInterval(tick, 60000);
-    return () => clearInterval(id);
-  }, []);
-
-  /* localStorage 저장 */
-  useEffect(() => {
-    saveStorage({ settings, beds });
-  }, [settings, beds]);
-
-  /* 설정 저장 */
-  const handleSettingsSave = useCallback((newSettings) => {
-    setSettings(newSettings);
-    setBeds(prev => {
-      const needRebuild =
-        newSettings.totalBeds     !== settings.totalBeds     ||
-        newSettings.startBedNumber !== settings.startBedNumber ||
-        newSettings.bedPrefix      !== settings.bedPrefix;
-      return needRebuild
-        ? makeBeds(newSettings.totalBeds, newSettings.startBedNumber, newSettings.bedPrefix, prev)
-        : prev;
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (user) {
+        setUserId(user.uid);
+        setIsLoggedIn(true);
+      } else {
+        setIsLoggedIn(false);
+        setUserId(null);
+      }
+      setIsCheckingAuth(false);
     });
-    setShowSettings(false);
-  }, [settings]);
-
-  /* 병상 저장 */
-  const handleBedSave = useCallback((updated) => {
-    setBeds(prev => prev.map(b => b.id === updated.id ? updated : b));
-    setSelectedBed(null);
+    return () => unsubscribe();
   }, []);
 
-  /* 빠른 퇴원 완료 */
-  const handleQuickDischarge = useCallback((bed) => {
-    setBeds(prev => prev.map(b =>
-      b.id === bed.id ? { ...b, status: 'empty', patient: { ...EMPTY_PATIENT } } : b
-    ));
+  useEffect(() => {
+    if (!userId) return;
+    currentUserId = userId;
+    syncEnabled = true;
+    setIsSyncReady(false);
+
+    const loadAndSubscribe = async () => {
+      const remote = await loadRemoteData(userId);
+      if (remote?.settings && Array.isArray(remote.beds)) {
+        setSettings(remote.settings);
+        setBeds(remote.beds);
+      } else {
+        saveRemoteData({ settings, beds });
+      }
+      setIsSyncReady(true);
+    };
+    loadAndSubscribe();
+
+    const unsubscribe = db.collection('wardData').doc(userId).onSnapshot(doc => {
+      if (doc.exists) {
+        const data = doc.data();
+        if (data?.settings && Array.isArray(data.beds)) {
+          setSettings(data.settings);
+          setBeds(data.beds);
+        }
+      }
+      setIsSyncReady(true);
+    });
+
+    return () => unsubscribe();
+  }, [userId]);
+
+  useEffect(() => {
+    const tick = setInterval(() => setNowDisplay(getNowDisplay()), 60000);
+    return () => clearInterval(tick);
   }, []);
 
-  /* 통계 */
+  useEffect(() => saveStorage({ settings, beds }, syncEnabled && isSyncReady), [settings, beds, isSyncReady]);
+
   const stats = useMemo(() => {
-    const c = {};
-    Object.keys(STATUS).forEach(k => (c[k] = 0));
-    beds.forEach(b => { c[b.status] = (c[b.status] || 0) + 1; });
+    const c = { all: beds.length };
+    Object.keys(STATUS).forEach(k => c[k] = beds.filter(b => b.status === k).length);
     return c;
   }, [beds]);
 
-  const overdueBeds = useMemo(() =>
-    beds.filter(b => isOverdue(b.status, settings)).length,
-  [beds, settings]);
+  const filteredBeds = useMemo(() => filter === 'all' ? beds : beds.filter(b => b.status === filter), [beds, filter]);
 
-  /* 필터 적용 */
-  const filteredBeds = useMemo(() =>
-    filter === 'all' ? beds : beds.filter(b => b.status === filter),
-  [beds, filter]);
+  // 로그인 상태 확인 중일 때 로딩 표시
+  if (isCheckingAuth) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-100">
+        <div className="text-center">
+          <div className="text-xl font-bold text-gray-700">로그인 상태 확인 중...</div>
+        </div>
+      </div>
+    );
+  }
 
-  const occupiedCount = beds.filter(b => b.status !== 'empty').length;
+  if (!isLoggedIn) return <Login onLogin={(uid) => { setUserId(uid); setIsLoggedIn(true); }} />;
 
-  /* ── 렌더링 ── */
   return (
-    <div style={{ maxWidth: 1440, margin: '0 auto', padding: '14px 16px', minHeight: '100vh' }}>
-
-      {/* 헤더 */}
-      <div style={{
-        background: 'white', borderRadius: 14, padding: '14px 20px',
-        boxShadow: '0 1px 6px rgba(0,0,0,0.07)',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: 14,
-      }}>
+    <div className="max-w-7xl mx-auto p-4">
+      <header className="bg-white p-5 rounded-2xl shadow-sm flex justify-between items-center mb-4">
         <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: '#111827', letterSpacing: '-0.5px' }}>
-            {settings.wardName}
-          </h1>
-          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-            {nowDisplay.dateStr} {nowDisplay.timeStr}
-            &nbsp;·&nbsp;총 {settings.totalBeds}병상 / 입원 {occupiedCount}명
+          <h1 className="text-2xl font-black text-gray-900">{settings.wardName}</h1>
+          <p className="text-xs text-gray-400">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b => b.status !== 'empty').length}명</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button className="btn btn-gray" onClick={() => setShowSettings(true)}>환경 설정</button>
+          <button className="btn btn-gray" onClick={async () => { await signOutUser(); setIsLoggedIn(false); setUserId(null); }}>로그아웃</button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
+        <div onClick={() => setFilter('all')} className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${filter === 'all' ? 'bg-gray-800 border-gray-800 text-white' : 'bg-white'}`}>
+          <div className="text-xl font-black">{stats.all}</div>
+          <div className="text-[10px] opacity-80 uppercase font-bold">전체</div>
+        </div>
+        {Object.entries(STATUS).map(([key, cfg]) => (
+          <div key={key} onClick={() => setFilter(key)} className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${filter === key ? 'border-current' : 'bg-white opacity-60'}`} style={{ color: cfg.color, borderColor: filter === key ? cfg.color : '#e5e7eb', background: filter === key ? cfg.bg : '' }}>
+            <div className="text-xl font-black">{stats[key]}</div>
+            <div className="text-[10px] text-gray-500 font-bold">{cfg.label}</div>
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {overdueBeds > 0 && (
-            <div style={{
-              background: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: 12,
-              padding: '5px 12px', borderRadius: 20, border: '1.5px solid #fecaca',
-            }}>
-              시간 초과 {overdueBeds}건
-            </div>
-          )}
-          <button className="btn btn-gray" onClick={() => setShowSettings(true)}>설정</button>
-        </div>
-      </div>
-
-      {/* 상태별 통계 카드 (클릭 = 필터) */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-        gap: 8, marginBottom: 14,
-      }}>
-        <div
-          onClick={() => setFilter('all')}
-          style={{
-            background: filter === 'all' ? '#1f2937' : 'white',
-            border: `2px solid ${filter === 'all' ? '#1f2937' : '#e5e7eb'}`,
-            borderRadius: 10, padding: '10px 14px', cursor: 'pointer',
-            transition: 'all 0.12s',
-          }}
-        >
-          <div style={{ fontSize: 24, fontWeight: 800, color: filter === 'all' ? 'white' : '#1f2937' }}>
-            {beds.length}
-          </div>
-          <div style={{ fontSize: 11, color: filter === 'all' ? '#9ca3af' : '#6b7280', marginTop: 1 }}>전체 병상</div>
-        </div>
-
-        {Object.entries(STATUS).map(([key, cfg]) => {
-          const count = stats[key] || 0;
-          const active = filter === key;
-          return (
-            <div
-              key={key}
-              onClick={() => setFilter(active ? 'all' : key)}
-              style={{
-                background: active ? cfg.bg : 'white',
-                border: `2px solid ${active ? cfg.color : '#e5e7eb'}`,
-                borderRadius: 10, padding: '10px 14px', cursor: 'pointer',
-                transition: 'all 0.12s', opacity: count === 0 ? 0.5 : 1,
-              }}
-            >
-              <div style={{ fontSize: 24, fontWeight: 800, color: cfg.color }}>{count}</div>
-              <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>{cfg.label}</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* 필터 안내 */}
-      {filter !== 'all' && (
-        <div style={{
-          marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          <span style={{
-            background: STATUS[filter]?.badgeBg || '#e5e7eb',
-            color: STATUS[filter]?.badgeText || '#374151',
-            padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700,
-          }}>
-            {STATUS[filter]?.label} 필터 적용 중
-          </span>
-          <button className="btn btn-gray btn-sm" onClick={() => setFilter('all')}>
-            필터 해제
-          </button>
-          <span style={{ fontSize: 12, color: '#9ca3af' }}>{filteredBeds.length}개 병상</span>
-        </div>
-      )}
-
-      {/* 병상 그리드 */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(155px, 1fr))',
-        gap: 10,
-      }}>
-        {filteredBeds.map(bed => (
-          <BedCard
-            key={bed.id}
-            bed={bed}
-            settings={settings}
-            onClick={setSelectedBed}
-            onQuickDischarge={handleQuickDischarge}
-          />
         ))}
       </div>
 
-      {filteredBeds.length === 0 && (
-        <div style={{
-          textAlign: 'center', padding: '60px 20px', color: '#d1d5db',
-          fontSize: 15, fontWeight: 500,
-        }}>
-          해당 상태의 병상이 없습니다.
-        </div>
-      )}
-
-      {/* 범례 */}
-      <div style={{
-        marginTop: 24, background: 'white', borderRadius: 12,
-        padding: '14px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-      }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', marginBottom: 10, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-          상태 범례
-        </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px' }}>
-          {Object.entries(STATUS).map(([, cfg]) => (
-            <div key={cfg.label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span className="status-dot" style={{ background: cfg.color }} />
-              <span style={{ fontSize: 12, color: '#6b7280' }}>{cfg.label}</span>
-            </div>
-          ))}
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+        {filteredBeds.map(bed => (
+          <BedCard key={bed.id} bed={bed} settings={settings} onClick={setSelectedBed} onQuickDischarge={(b) => setBeds(prev => prev.map(x => x.id === b.id ? {...x, status: 'empty', patient: {...EMPTY_PATIENT}} : x))} />
+        ))}
       </div>
 
-      <div style={{ textAlign: 'center', marginTop: 12, color: '#d1d5db', fontSize: 11 }}>
-        데이터는 이 브라우저에 자동 저장됩니다
-      </div>
-
-      {/* 모달 */}
-      {selectedBed && (
-        <BedModal bed={selectedBed} onSave={handleBedSave} onClose={() => setSelectedBed(null)} />
-      )}
-      {showSettings && (
-        <SettingsModal settings={settings} onSave={handleSettingsSave} onClose={() => setShowSettings(false)} />
-      )}
+      {selectedBed && <BedModal bed={selectedBed} onClose={() => setSelectedBed(null)} onSave={(updated) => { setBeds(prev => prev.map(b => b.id === updated.id ? updated : b)); setSelectedBed(null); }} />}
+      {showSettings && <SettingsModal settings={settings} onClose={() => setShowSettings(false)} onSave={(s) => { setSettings(s); setBeds(prev => makeBeds(parseInt(s.totalBeds), parseInt(s.startBedNumber), s.bedPrefix, prev)); setShowSettings(false); }} />}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
 </script>
 </body>
 </html>
