@@ -9,25 +9,24 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
   <style>
-    * { box-sizing: border-box; }
-    body { font-family: 'Malgun Gothic', sans-serif; background: #f0f2f5; margin: 0; min-height: 100vh; }
-    .bed-card { cursor: pointer; transition: all 0.15s ease; border-radius: 12px; }
-    .bed-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    * { box-sizing: border-box; font-family: 'Malgun Gothic', sans-serif; }
+    body { background: #f0f2f5; margin: 0; min-height: 100vh; }
+    .bed-card { cursor: pointer; transition: all 0.2s ease; border-radius: 12px; background: white; border: 2px solid #eceef2; }
+    .bed-card:hover { transform: translateY(-3px); box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(2px); }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    // --- Firebase 초기화 ---
+    // --- 1. Firebase 설정 (공백 제거 및 연결 확인) ---
     const firebaseConfig = {
-      apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI",
+      apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI", // 공백 확실히 제거됨
       authDomain: "gen-lang-client-0584117357.firebaseapp.com",
       projectId: "gen-lang-client-0584117357",
       storageBucket: "gen-lang-client-0584117357.firebasestorage.app",
@@ -54,15 +53,17 @@
       const [filter, setFilter] = useState('all');
       const [selectedBed, setSelectedBed] = useState(null);
       const [showSettings, setShowSettings] = useState(false);
+      const [dbConnected, setDbConnected] = useState(false);
 
-      // 1. 설정 및 데이터 실시간 리스너
+      // 1. 실시간 데이터 동기화 (onSnapshot)
       useEffect(() => {
-        // 설정 리스너
+        // 설정 로드
         const unsubSettings = db.collection("config").doc("appSettings").onSnapshot(doc => {
           if (doc.exists) setSettings(doc.data());
-        });
+          setDbConnected(true);
+        }, () => setDbConnected(false));
 
-        // 병상 데이터 리스너
+        // 병상 데이터 로드
         const unsubBeds = db.collection("ward").onSnapshot(snapshot => {
           const items = [];
           snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
@@ -72,63 +73,72 @@
         return () => { unsubSettings(); unsubBeds(); };
       }, []);
 
-      // 2. 병상 목록 자동 생성 로직 (설정에 맞춰 동기화)
-      useEffect(() => {
-        const generateBeds = async () => {
-          const batch = db.batch();
-          for (let i = 0; i < settings.totalBeds; i++) {
-            const id = `${settings.bedPrefix}${settings.startBedNumber + i}`;
-            const exists = beds.find(b => b.id === id);
-            if (!exists) {
-              const ref = db.collection("ward").doc(id);
-              batch.set(ref, { status: 'empty', name: '', memo: '' }, { merge: true });
-            }
-          }
-          // 불필요한 병상 삭제는 안전을 위해 생략하거나 필요시 추가
-          await batch.commit().catch(() => {});
-        };
-        if (beds.length > 0) generateBeds();
-      }, [settings]);
-
-      // 통계 및 필터링
+      // 2. 통계 계산
       const stats = useMemo(() => {
         const s = { all: beds.length, empty: 0, admitted: 0, morning: 0, afternoon: 0, surgery: 0 };
-        beds.forEach(b => { if(s[b.status]) s[b.status]++; });
+        beds.forEach(b => { if(s[b.status] !== undefined) s[b.status]++; });
         return s;
       }, [beds]);
 
-      const filteredBeds = beds
-        .filter(b => filter === 'all' || b.status === filter)
-        .sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
+      // 3. 필터링 및 정렬
+      const filteredBeds = useMemo(() => {
+        return beds
+          .filter(b => filter === 'all' || b.status === filter)
+          .sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
+      }, [beds, filter]);
 
-      // 저장 및 퇴원 로직
+      // 4. 저장 함수 (서버 전송)
       const handleSaveBed = async (id, data) => {
-        await db.collection("ward").doc(id).set(data, { merge: true });
-        setSelectedBed(null);
+        try {
+          await db.collection("ward").doc(id).set(data, { merge: true });
+          setSelectedBed(null);
+        } catch (e) {
+          alert("데이터 저장 실패! Firebase 규칙을 확인하세요.");
+        }
       };
 
       const handleQuickDischarge = async (id) => {
-        if(confirm("퇴원 처리하시겠습니까?")) {
-          await db.collection("ward").doc(id).set({ status: 'empty', name: '', memo: '' }, { merge: true });
+        if(!confirm("퇴원 처리하시겠습니까?")) return;
+        await db.collection("ward").doc(id).set({ status: 'empty', name: '', memo: '' }, { merge: true });
+      };
+
+      const handleSaveSettings = async () => {
+        try {
+          await db.collection("config").doc("appSettings").set(settings);
+          // 새 병상 생성 로직
+          const batch = db.batch();
+          for(let i=0; i<settings.totalBeds; i++) {
+            const id = `${settings.bedPrefix}${settings.startBedNumber + i}`;
+            batch.set(db.collection("ward").doc(id), { status: 'empty', name: '', memo: '' }, { merge: true });
+          }
+          await batch.commit();
+          setShowSettings(false);
+          alert("설정이 저장되었습니다.");
+        } catch (e) {
+          alert("설정 저장 실패!");
         }
       };
 
       return (
         <div className="max-w-7xl mx-auto p-4 md:p-8">
-          <header className="flex justify-between items-center mb-8">
+          <header className="flex justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm">
             <div>
-              <h1 className="text-3xl font-black text-slate-800">210 병동관리</h1>
-              <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Real-time Management</p>
+              <h1 className="text-2xl font-black text-slate-800">210 병동관리시스템</h1>
+              <div className="flex items-center gap-2 mt-1">
+                <div className={`w-2 h-2 rounded-full ${dbConnected ? 'bg-green-500' : 'bg-red-500 animate-pulse'}`}></div>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  {dbConnected ? 'Cloud Connected' : 'Connection Error'}
+                </span>
+              </div>
             </div>
-            <button onClick={() => setShowSettings(true)} className="p-2 bg-white rounded-full shadow-sm hover:bg-gray-100">⚙️</button>
+            <button onClick={() => setShowSettings(true)} className="p-3 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors text-xl">⚙️</button>
           </header>
 
           {/* 통계 바 */}
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-8">
             {[{id:'all', label:'전체', color:'#64748b'}, ...Object.entries(STATUS_MAP).map(([k,v])=>({id:k, ...v}))].map(item => (
-              <div key={item.id} 
-                   onClick={() => setFilter(item.id)}
-                   className={`p-4 rounded-2xl bg-white border-2 cursor-pointer transition-all ${filter === item.id ? 'border-slate-800 shadow-md' : 'border-transparent'}`}>
+              <div key={item.id} onClick={() => setFilter(item.id)}
+                   className={`p-4 rounded-2xl bg-white border-2 cursor-pointer transition-all ${filter === item.id ? 'border-slate-800 shadow-md scale-105' : 'border-transparent shadow-sm'}`}>
                 <div className="text-2xl font-black" style={{ color: item.color }}>{stats[item.id] || 0}</div>
                 <div className="text-[10px] font-bold text-slate-400 uppercase">{item.label}</div>
               </div>
@@ -140,19 +150,22 @@
             {filteredBeds.map(bed => {
               const cfg = STATUS_MAP[bed.status] || STATUS_MAP.empty;
               return (
-                <div key={bed.id} className="bed-card bg-white p-4 border-2 relative group" style={{ borderColor: bed.status === 'empty' ? '#f1f5f9' : cfg.color }}>
-                  <div className="flex justify-between items-start mb-4" onClick={() => setSelectedBed(bed)}>
-                    <span className="text-xl font-black text-slate-700">{bed.id}</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: cfg.color }}>{cfg.label}</span>
-                  </div>
-                  <div className="h-12 flex flex-col justify-center" onClick={() => setSelectedBed(bed)}>
-                    <div className="font-bold text-slate-800">{bed.name || <span className="text-slate-300 italic">비어 있음</span>}</div>
-                    <div className="text-[10px] text-slate-400 truncate">{bed.memo}</div>
+                <div key={bed.id} className="bed-card p-4 border-2 flex flex-col justify-between" 
+                     style={{ borderColor: bed.status === 'empty' ? '#f1f5f9' : cfg.color }}>
+                  <div onClick={() => setSelectedBed({...bed})}>
+                    <div className="flex justify-between items-start mb-4">
+                      <span className="text-xl font-black text-slate-700">{bed.id}</span>
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full text-white uppercase" style={{ backgroundColor: cfg.color }}>{cfg.label}</span>
+                    </div>
+                    <div className="min-h-[50px] mb-2">
+                      <div className="font-bold text-slate-800 text-lg">{bed.name || <span className="text-slate-200 italic">Empty</span>}</div>
+                      <div className="text-[10px] text-slate-400 line-clamp-2 mt-1">{bed.memo}</div>
+                    </div>
                   </div>
                   {bed.status !== 'empty' && (
-                    <button onClick={(e) => { e.stopPropagation(); handleQuickDischarge(bed.id); }} 
-                            className="mt-3 w-full py-1.5 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors">
-                      신속 퇴원
+                    <button onClick={() => handleQuickDischarge(bed.id)} 
+                            className="w-full py-2 mt-2 text-[10px] font-black bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-500 transition-all uppercase tracking-tighter">
+                      Quick Discharge
                     </button>
                   )}
                 </div>
@@ -160,38 +173,41 @@
             })}
           </div>
 
-          {/* 정보 수정 모달 */}
+          {/* 수정 모달 */}
           {selectedBed && (
             <div className="modal-overlay" onClick={() => setSelectedBed(null)}>
               <div className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                <h2 className="text-2xl font-black mb-6 text-slate-800">{selectedBed.id}호 정보 수정</h2>
-                <div className="space-y-5">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-black text-slate-800">{selectedBed.id}호 정보 수정</h2>
+                  <button onClick={() => setSelectedBed(null)} className="text-slate-300 hover:text-slate-800">✕</button>
+                </div>
+                <div className="space-y-6">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2">상태</label>
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Patient Status</label>
                     <div className="grid grid-cols-3 gap-2">
                       {Object.entries(STATUS_MAP).map(([k, v]) => (
                         <button key={k} onClick={() => setSelectedBed({...selectedBed, status: k})}
-                                className={`py-2.5 rounded-xl text-xs font-bold border-2 transition-all ${selectedBed.status === k ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-100 text-slate-500'}`}>
+                                className={`py-3 rounded-xl text-xs font-bold border-2 transition-all ${selectedBed.status === k ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-100 text-slate-500 hover:bg-slate-50'}`}>
                           {v.label}
                         </button>
                       ))}
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2">환자 성함</label>
-                    <input className="w-full border-2 border-slate-100 p-3.5 rounded-2xl focus:border-blue-500 outline-none font-bold"
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Patient Name</label>
+                    <input className="w-full border-2 border-slate-100 p-4 rounded-2xl focus:border-blue-500 outline-none font-bold text-lg"
                            value={selectedBed.name} onChange={e => setSelectedBed({...selectedBed, name: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-2">메모</label>
-                    <textarea className="w-full border-2 border-slate-100 p-3.5 rounded-2xl focus:border-blue-500 outline-none h-24 resize-none"
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-2">Note / Memo</label>
+                    <textarea className="w-full border-2 border-slate-100 p-4 rounded-2xl focus:border-blue-500 outline-none h-28 resize-none text-sm"
                               value={selectedBed.memo} onChange={e => setSelectedBed({...selectedBed, memo: e.target.value})} />
                   </div>
                 </div>
                 <div className="flex gap-3 mt-8">
-                  <button className="flex-1 bg-slate-100 text-slate-500 font-bold py-4 rounded-2xl" onClick={() => setSelectedBed(null)}>닫기</button>
-                  <button className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200" 
-                          onClick={() => handleSaveBed(selectedBed.id, selectedBed)}>저장</button>
+                  <button className="flex-1 bg-slate-100 text-slate-500 font-bold py-4 rounded-2xl hover:bg-slate-200 transition-colors" onClick={() => setSelectedBed(null)}>CANCEL</button>
+                  <button className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors" 
+                          onClick={() => handleSaveBed(selectedBed.id, selectedBed)}>SAVE CHANGES</button>
                 </div>
               </div>
             </div>
@@ -201,29 +217,26 @@
           {showSettings && (
             <div className="modal-overlay" onClick={() => setShowSettings(false)}>
               <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-black mb-6">전체 환경 설정</h2>
+                <h2 className="text-xl font-black mb-6 border-b pb-4">System Settings</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1.5">총 병상 수</label>
-                    <input type="number" className="w-full border-2 border-slate-100 p-3 rounded-xl" 
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Total Beds</label>
+                    <input type="number" className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold" 
                            value={settings.totalBeds} onChange={e => setSettings({...settings, totalBeds: parseInt(e.target.value)})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1.5">시작 번호</label>
-                    <input type="number" className="w-full border-2 border-slate-100 p-3 rounded-xl" 
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Start Number</label>
+                    <input type="number" className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold" 
                            value={settings.startBedNumber} onChange={e => setSettings({...settings, startBedNumber: parseInt(e.target.value)})} />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1.5">병상 접두사 (예: A-)</label>
-                    <input type="text" className="w-full border-2 border-slate-100 p-3 rounded-xl" 
-                           value={settings.bedPrefix} onChange={e => setSettings({...settings, bedPrefix: e.target.value})} />
+                    <label className="block text-[10px] font-black text-slate-400 uppercase mb-1">Bed Prefix</label>
+                    <input type="text" className="w-full border-2 border-slate-100 p-3 rounded-xl font-bold" 
+                           value={settings.bedPrefix} onChange={e => setSettings({...settings, bedPrefix: e.target.value})} placeholder="e.g. A-" />
                   </div>
                 </div>
-                <button className="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl mt-8 shadow-lg shadow-slate-200" 
-                        onClick={async () => {
-                          await db.collection("config").doc("appSettings").set(settings);
-                          setShowSettings(false);
-                        }}>설정 저장 및 적용</button>
+                <button className="w-full bg-slate-800 text-white font-bold py-4 rounded-2xl mt-8 shadow-xl shadow-slate-200 hover:bg-black transition-colors" 
+                        onClick={handleSaveSettings}>APPLY & SYNC</button>
               </div>
             </div>
           )}
