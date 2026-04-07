@@ -13,103 +13,48 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
     * { box-sizing: border-box; }
-    body {
-      font-family: 'Malgun Gothic', -apple-system, BlinkMacSystemFont, sans-serif;
-      margin: 0;
-      background: #f0f2f5;
-      min-height: 100vh;
-    }
-    .bed-card {
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      user-select: none;
-    }
-    .bed-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 16px rgba(0,0,0,0.14) !important;
-    }
+    body { font-family: 'Malgun Gothic', -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f0f2f5; min-height: 100vh; }
+    .bed-card { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; user-select: none; }
+    .bed-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.14) !important; }
     .bed-card.overdue { animation: overdue-pulse 1.8s ease-in-out infinite; }
-    @keyframes overdue-pulse {
-      0%, 100% { box-shadow: 0 0 0 2px transparent; }
-      50%       { box-shadow: 0 0 0 3px #ef4444; }
-    }
-    .modal-overlay {
-      position: fixed; inset: 0;
-      background: rgba(0,0,0,0.55);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 1000; padding: 16px;
-    }
-    .modal-box {
-      background: white; border-radius: 14px; padding: 24px;
-      width: 500px; max-width: 100%; max-height: 92vh;
-      overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25);
-    }
-    .form-input {
-      width: 100%; padding: 8px 12px;
-      border: 1.5px solid #e5e7eb; border-radius: 7px;
-      font-size: 14px; font-family: inherit; outline: none;
-      background: #fafafa; transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .form-input:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
-      background: white;
-    }
-    .form-label {
-      display: block; font-size: 12px; font-weight: 600;
-      color: #6b7280; margin-bottom: 5px;
-      letter-spacing: 0.02em; text-transform: uppercase;
-    }
-    .btn {
-      padding: 9px 18px; border-radius: 7px; border: none;
-      cursor: pointer; font-size: 13px; font-weight: 600;
-      font-family: inherit; transition: opacity 0.15s, transform 0.1s;
-      display: inline-flex; align-items: center; gap: 5px;
-    }
-    .btn:hover  { opacity: 0.88; }
-    .btn:active { transform: scale(0.97); }
-    .btn-primary { background: #3b82f6; color: white; }
-    .btn-danger  { background: #ef4444; color: white; }
-    .btn-gray    { background: #e5e7eb; color: #374151; }
-    .btn-green   { background: #22c55e; color: white; }
-    .btn-sm      { padding: 5px 11px; font-size: 12px; }
-    ::-webkit-scrollbar       { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 99px; }
-    .status-dot { display:inline-block; width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-    .section-divider { border:none; border-top:1px solid #f0f0f0; margin:16px 0; }
-    .sync-indicator {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 11px; font-weight: 600;
-      padding: 3px 10px; border-radius: 999px;
-    }
-    .sync-ok      { background: #dcfce7; color: #166534; }
-    .sync-saving  { background: #fef9c3; color: #854d0e; }
-    .sync-error   { background: #fee2e2; color: #991b1b; }
-    .sync-offline { background: #f3f4f6; color: #6b7280; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spin { animation: spin 1s linear infinite; }
-    .offline-banner {
-      position: fixed; top: 0; left: 0; right: 0;
-      background: #f59e0b; color: #451a03;
-      text-align: center; font-size: 13px; font-weight: 700;
-      padding: 6px; z-index: 2000; display: none;
-    }
-    .offline-banner.show { display: block; }
+    @keyframes overdue-pulse { 0%,100%{box-shadow:0 0 0 2px transparent;} 50%{box-shadow:0 0 0 3px #ef4444;} }
+    .modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px; }
+    .modal-box { background:white;border-radius:14px;padding:24px;width:500px;max-width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.25); }
+    .form-input { width:100%;padding:8px 12px;border:1.5px solid #e5e7eb;border-radius:7px;font-size:14px;font-family:inherit;outline:none;background:#fafafa;transition:border-color 0.15s,box-shadow 0.15s; }
+    .form-input:focus { border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,0.15);background:white; }
+    .form-label { display:block;font-size:12px;font-weight:600;color:#6b7280;margin-bottom:5px;letter-spacing:0.02em;text-transform:uppercase; }
+    .btn { padding:9px 18px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;transition:opacity 0.15s,transform 0.1s;display:inline-flex;align-items:center;gap:5px; }
+    .btn:hover{opacity:0.88;} .btn:active{transform:scale(0.97);}
+    .btn-primary{background:#3b82f6;color:white;} .btn-danger{background:#ef4444;color:white;}
+    .btn-gray{background:#e5e7eb;color:#374151;} .btn-green{background:#22c55e;color:white;}
+    .btn-sm{padding:5px 11px;font-size:12px;}
+    ::-webkit-scrollbar{width:6px;} ::-webkit-scrollbar-track{background:transparent;} ::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:99px;}
+    .status-dot{display:inline-block;width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+    .section-divider{border:none;border-top:1px solid #f0f0f0;margin:16px 0;}
+    .sync-indicator{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;}
+    .sync-ok{background:#dcfce7;color:#166534;} .sync-saving{background:#fef9c3;color:#854d0e;} .sync-error{background:#fee2e2;color:#991b1b;}
+    @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
   </style>
 </head>
 <body>
-<div id="offline-banner" class="offline-banner">
-  오프라인 상태입니다. 수정 내용은 로컬에 저장되며, 연결 복구 시 자동 업로드됩니다.
-</div>
 <div id="root"></div>
-
 <script type="text/babel">
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-/* ══════════════════════════════════════
-   Firebase 초기화 (단 한 번만)
-   ══════════════════════════════════════ */
+const STATUS = {
+  empty:                { label:'비어 있음',       color:'#9ca3af', bg:'#f9fafb', border:'#e5e7eb', textColor:'#6b7280', badgeBg:'#e5e7eb',  badgeText:'#4b5563' },
+  admitted:             { label:'입원 중',         color:'#3b82f6', bg:'#eff6ff', border:'#bfdbfe', textColor:'#1e40af', badgeBg:'#3b82f6',  badgeText:'#ffffff' },
+  morning_discharge:    { label:'오전 퇴원 예정',  color:'#f59e0b', bg:'#fffbeb', border:'#fde68a', textColor:'#92400e', badgeBg:'#f59e0b',  badgeText:'#ffffff' },
+  afternoon_discharge:  { label:'오후 퇴원 예정',  color:'#f97316', bg:'#fff7ed', border:'#fed7aa', textColor:'#9a3412', badgeBg:'#f97316',  badgeText:'#ffffff' },
+  afternoon_admission:  { label:'오후 입원 예정',  color:'#22c55e', bg:'#f0fdf4', border:'#bbf7d0', textColor:'#14532d', badgeBg:'#22c55e',  badgeText:'#ffffff' },
+  next_day_discharge:   { label:'다음날 퇴원 예정',color:'#a855f7', bg:'#faf5ff', border:'#e9d5ff', textColor:'#581c87', badgeBg:'#a855f7',  badgeText:'#ffffff' },
+  provisional_discharge:{ label:'가퇴원',          color:'#f43f5e', bg:'#fff1f2', border:'#fecdd3', textColor:'#881337', badgeBg:'#f43f5e',  badgeText:'#ffffff' },
+};
+
+const DEFAULT_SETTINGS = { wardName:'210정형외과병동관리시스템', totalBeds:20, bedPrefix:'', startBedNumber:1, morningCutoff:'12:00', afternoonCutoff:'18:00', autoTransition:false };
+const EMPTY_PATIENT = { name:'', age:'', gender:'', diagnosis:'', notes:'', isSurgery:false, admittedDate:'', dischargeDate:'' };
+
+/* ── Firebase 초기화 (단 한 번만) ── */
 const FIREBASE_CONFIG = {
   apiKey: 'AIzaSyDNskn4Kmkha07oGXcEXVhhNd9MvGOgcpI',
   authDomain: 'gen-lang-client-0584117357.firebaseapp.com',
@@ -117,269 +62,159 @@ const FIREBASE_CONFIG = {
   storageBucket: 'gen-lang-client-0584117357.firebasestorage.app',
   messagingSenderId: '117986366738',
   appId: '1:117986366738:web:08d7b55ac07479d9cf4fcb',
-  measurementId: 'G-99DNYLR26W',
 };
 if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
 const auth = firebase.auth();
 const db   = firebase.firestore();
 
-/* ══════════════════════════════════════
-   상수
-   ══════════════════════════════════════ */
-const STATUS = {
-  empty:                { label:'비어 있음',       color:'#9ca3af', bg:'#f9fafb', border:'#e5e7eb', textColor:'#6b7280', badgeBg:'#e5e7eb', badgeText:'#4b5563' },
-  admitted:             { label:'입원 중',          color:'#3b82f6', bg:'#eff6ff', border:'#bfdbfe', textColor:'#1e40af', badgeBg:'#3b82f6', badgeText:'#ffffff' },
-  morning_discharge:    { label:'오전 퇴원 예정',   color:'#f59e0b', bg:'#fffbeb', border:'#fde68a', textColor:'#92400e', badgeBg:'#f59e0b', badgeText:'#ffffff' },
-  afternoon_discharge:  { label:'오후 퇴원 예정',   color:'#f97316', bg:'#fff7ed', border:'#fed7aa', textColor:'#9a3412', badgeBg:'#f97316', badgeText:'#ffffff' },
-  afternoon_admission:  { label:'오후 입원 예정',   color:'#22c55e', bg:'#f0fdf4', border:'#bbf7d0', textColor:'#14532d', badgeBg:'#22c55e', badgeText:'#ffffff' },
-  next_day_discharge:   { label:'다음날 퇴원 예정', color:'#a855f7', bg:'#faf5ff', border:'#e9d5ff', textColor:'#581c87', badgeBg:'#a855f7', badgeText:'#ffffff' },
-  provisional_discharge:{ label:'가퇴원',           color:'#f43f5e', bg:'#fff1f2', border:'#fecdd3', textColor:'#881337', badgeBg:'#f43f5e', badgeText:'#ffffff' },
-};
-
-const DEFAULT_SETTINGS = {
-  wardName:'210정형외과병동관리시스템', totalBeds:20, bedPrefix:'',
-  startBedNumber:1, morningCutoff:'12:00', afternoonCutoff:'18:00', autoTransition:false,
-};
-const EMPTY_PATIENT = {
-  name:'', age:'', gender:'', diagnosis:'',
-  notes:'', isSurgery:false, admittedDate:'', dischargeDate:'',
-};
-
-/* ══════════════════════════════════════
-   유틸리티
-   ══════════════════════════════════════ */
-function parseTime(str) {
-  const [h=0,m=0] = (str||'').split(':').map(Number); return h*60+m;
-}
-function getCurrentMinutes() { const n=new Date(); return n.getHours()*60+n.getMinutes(); }
-function isOverdue(status, settings) {
-  const cur = getCurrentMinutes();
-  if (status==='morning_discharge')   return cur > parseTime(settings.morningCutoff);
-  if (status==='afternoon_discharge') return cur > parseTime(settings.afternoonCutoff);
+/* ── 유틸리티 ── */
+function parseTime(str){ const [h=0,m=0]=(str||'').split(':').map(Number); return h*60+m; }
+function getCurrentMinutes(){ const n=new Date(); return n.getHours()*60+n.getMinutes(); }
+function isOverdue(status,settings){
+  const cur=getCurrentMinutes();
+  if(status==='morning_discharge') return cur>parseTime(settings.morningCutoff);
+  if(status==='afternoon_discharge') return cur>parseTime(settings.afternoonCutoff);
   return false;
 }
-function getNowDisplay() {
-  const n = new Date();
+function getNowDisplay(){
+  const n=new Date();
   return {
     timeStr: n.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),
     dateStr: n.toLocaleDateString('ko-KR',{year:'numeric',month:'long',day:'numeric',weekday:'short'}),
   };
 }
-function getDdayDisplay(dateStr) {
-  if (!dateStr) return '';
-  const target = new Date(`${dateStr}T00:00:00`);
-  const today  = new Date(); today.setHours(0,0,0,0);
-  const diff   = Math.round((target-today)/86400000);
-  if (diff===0) return 'D-day';
-  return diff>0 ? `D-${diff}` : `D+${Math.abs(diff)}`;
+function getDdayDisplay(dateStr){
+  if(!dateStr) return '';
+  const target=new Date(`${dateStr}T00:00:00`);
+  const today=new Date(); today.setHours(0,0,0,0);
+  const diff=Math.round((target-today)/86400000);
+  if(diff===0) return 'D-day';
+  return diff>0?`D-${diff}`:`D+${Math.abs(diff)}`;
 }
-function makeBeds(total, start, prefix, existing=[]) {
+function makeBeds(total,start,prefix,existing=[]){
   return Array.from({length:total},(_,i)=>{
-    const id = `${prefix}${start+i}`;
-    return existing.find(b=>b.id===id) || {id, bedNumber:id, status:'empty', patient:{...EMPTY_PATIENT}};
+    const id=`${prefix}${start+i}`;
+    return existing.find(b=>b.id===id)||{id,bedNumber:id,status:'empty',patient:{...EMPTY_PATIENT}};
   });
 }
-const LS_KEY = 'wardData_v3';
-function loadLS()   { try { return JSON.parse(localStorage.getItem(LS_KEY)); } catch { return null; } }
-function saveLS(d)  { try { localStorage.setItem(LS_KEY, JSON.stringify(d)); } catch {} }
+function loadLS(){ try{return JSON.parse(localStorage.getItem('wardData_v2'));}catch{return null;} }
+function saveLS(data){ try{localStorage.setItem('wardData_v2',JSON.stringify(data));}catch{} }
 
-function signUpUser(email,pw) { return auth.createUserWithEmailAndPassword(email,pw).then(r=>r.user.uid); }
-function signInUser(email,pw) { return auth.signInWithEmailAndPassword(email,pw).then(r=>r.user.uid); }
-function signOutUser()        { return auth.signOut(); }
+/* ── Firebase 인증 ── */
+function signUpUser(e,p){ return auth.createUserWithEmailAndPassword(e,p).then(r=>r.user.uid); }
+function signInUser(e,p){ return auth.signInWithEmailAndPassword(e,p).then(r=>r.user.uid); }
+function signOutUser(){ return auth.signOut(); }
 
-/* ══════════════════════════════════════
-   훅: useFirestoreSync v4
-   - 오프라인 중 수정 → pendingUpload 플래그
-   - 온라인 복귀 시 → 버전 비교 후 안전하게 업로드
-   - SyncIndicator 정상 표시
-   - 기존 데이터 보존 (서버 문서 없을 때만 로컬 업로드)
-   ══════════════════════════════════════ */
-function useFirestoreSync(userId) {
-  const stored = loadLS();
-  const [settings,  setSettings]  = useState(()=>({...DEFAULT_SETTINGS,...(stored?.settings||{})}));
-  const [beds,      setBeds]      = useState(()=>stored?.beds?.length ? stored.beds : makeBeds(DEFAULT_SETTINGS.totalBeds,DEFAULT_SETTINGS.startBedNumber,DEFAULT_SETTINGS.bedPrefix));
-  const [syncStatus,setSyncStatus]= useState('idle');
-  const [isOnline,  setIsOnline]  = useState(navigator.onLine);
+/* ══════════════════════════════════════════════
+   useFirestoreSync v4 — 요금 절감 핵심 수정
+   [1] Firebase 초기화 중복 제거 (파일 하단 script 삭제)
+   [2] 디바운스 1000ms → 연속 수정 시 마지막 1번만 전송
+   [3] isSaving 플래그 → onSnapshot 루프 완전 차단
+   [4] 오프라인 복귀 시 pendingData 재전송
+   ══════════════════════════════════════════════ */
+function useFirestoreSync(userId){
+  const [settings,setSettings]=useState(()=>{ const s=loadLS(); return {...DEFAULT_SETTINGS,...(s?.settings||{})}; });
+  const [beds,setBeds]=useState(()=>{ const s=loadLS(); return s?.beds?.length?s.beds:makeBeds(DEFAULT_SETTINGS.totalBeds,DEFAULT_SETTINGS.startBedNumber,DEFAULT_SETTINGS.bedPrefix); });
+  const [syncStatus,setSyncStatus]=useState('idle');
 
-  const settingsRef      = useRef(settings);
-  const bedsRef          = useRef(beds);
-  const localVersion     = useRef(stored?.version||0);
-  const confirmedVersion = useRef(stored?.version||0);
-  const pendingUpload    = useRef(stored?.pendingUpload||false);
-  const skipNextSnapshot = useRef(false);
-  settingsRef.current = settings;
-  bedsRef.current     = beds;
+  const settingsRef   = useRef(settings);
+  const bedsRef       = useRef(beds);
+  const isSaving      = useRef(false);   // [수정2] 저장 중 onSnapshot 차단
+  const debounceTimer = useRef(null);    // [수정1] 디바운스 타이머
+  const pendingData   = useRef(null);    // [수정3] 오프라인 미전송 데이터
 
-  /* 온/오프라인 이벤트 */
-  useEffect(()=>{
-    const onOnline  = ()=>setIsOnline(true);
-    const onOffline = ()=>setIsOnline(false);
-    window.addEventListener('online',  onOnline);
-    window.addEventListener('offline', onOffline);
-    const banner = document.getElementById('offline-banner');
-    if (banner) banner.classList.toggle('show', !navigator.onLine);
-    return ()=>{ window.removeEventListener('online',onOnline); window.removeEventListener('offline',onOffline); };
-  },[]);
+  settingsRef.current=settings;
+  bedsRef.current=beds;
 
-  useEffect(()=>{
-    const banner = document.getElementById('offline-banner');
-    if (banner) banner.classList.toggle('show',!isOnline);
-    if (!isOnline) setSyncStatus('offline');
-  },[isOnline]);
-
-  /* Firestore 저장 */
-  const saveNow = useCallback(async(s,b)=>{
-    if (!userId) return;
-    localVersion.current += 1;
-    const myVer = localVersion.current;
-    saveLS({settings:s, beds:b, version:myVer, pendingUpload:!navigator.onLine});
-
-    if (!navigator.onLine) {
-      pendingUpload.current = true;
-      setSyncStatus('offline');
-      return;
-    }
-
-    skipNextSnapshot.current = true;
+  /* 실제 Firestore 저장 */
+  const flushToFirestore = useCallback(async(s,b)=>{
+    if(!userId) return;
+    isSaving.current=true;
     setSyncStatus('saving');
     try {
       await db.collection('wardData').doc(userId).set({
-        settings:s, beds:b, version:myVer,
+        settings:s, beds:b,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-      confirmedVersion.current = myVer;
-      pendingUpload.current    = false;
-      saveLS({settings:s, beds:b, version:myVer, pendingUpload:false});
+      pendingData.current=null;
       setSyncStatus('saved');
-      setTimeout(()=>setSyncStatus('idle'), 2000);
-    } catch(err) {
-      console.error('저장 실패:',err);
-      pendingUpload.current = true;
+      setTimeout(()=>setSyncStatus('idle'),2000);
+    } catch(err){
+      console.error('Firestore save failed:',err);
+      pendingData.current={settings:s,beds:b};
       setSyncStatus('error');
+    } finally {
+      isSaving.current=false;
     }
   },[userId]);
 
-  /* 온라인 복귀 시: pending 데이터 업로드 */
-  useEffect(()=>{
-    if (!isOnline || !userId || !pendingUpload.current) return;
-    (async()=>{
-      try {
-        const serverDoc = await db.collection('wardData').doc(userId).get();
-        const serverVer = serverDoc.exists ? (serverDoc.data()?.version||0) : 0;
+  /* [수정1] 디바운스 저장 — 1초 내 연속 수정은 마지막 것만 전송 */
+  const saveNow = useCallback((s,b)=>{
+    saveLS({settings:s,beds:b});                              // 로컬 즉시
+    if(debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current=setTimeout(()=>flushToFirestore(s,b),1000);
+  },[flushToFirestore]);
 
-        if (localVersion.current > serverVer) {
-          /* 로컬이 더 최신 → 서버에 올림 */
-          setSyncStatus('saving');
-          await db.collection('wardData').doc(userId).set({
-            settings:settingsRef.current, beds:bedsRef.current,
-            version:localVersion.current,
-            updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-          confirmedVersion.current = localVersion.current;
-          pendingUpload.current    = false;
-          saveLS({settings:settingsRef.current, beds:bedsRef.current, version:localVersion.current, pendingUpload:false});
-          setSyncStatus('saved');
-          setTimeout(()=>setSyncStatus('idle'),2000);
-        } else if (serverDoc.exists && serverDoc.data()?.beds) {
-          /* 서버가 더 최신 → 서버 데이터 반영 (기존 데이터 보존) */
-          const d = serverDoc.data();
-          if (d.settings) setSettings(d.settings);
-          if (Array.isArray(d.beds)) setBeds(d.beds);
-          confirmedVersion.current = serverVer;
-          localVersion.current     = serverVer;
-          pendingUpload.current    = false;
-          saveLS({settings:d.settings, beds:d.beds, version:serverVer, pendingUpload:false});
-          setSyncStatus('idle');
-        }
-      } catch(err) {
-        console.error('복귀 업로드 실패:',err);
-        setSyncStatus('error');
-      }
-    })();
-  },[isOnline, userId]);
-
-  /* onSnapshot 실시간 리스너 */
-  useEffect(()=>{
-    if (!userId) return;
-    let isFirst = true;
-    const unsub = db.collection('wardData').doc(userId).onSnapshot(
-      (doc)=>{
-        if (doc.metadata.hasPendingWrites) return;
-        if (skipNextSnapshot.current) { skipNextSnapshot.current=false; return; }
-        if (doc.exists && doc.data()?.beds) {
-          const data     = doc.data();
-          const remoteVer= data.version||0;
-          if (remoteVer <= confirmedVersion.current && !isFirst) return;
-          if (remoteVer > localVersion.current || isFirst) {
-            confirmedVersion.current = remoteVer;
-            localVersion.current     = remoteVer;
-            if (data.settings) setSettings(data.settings);
-            if (Array.isArray(data.beds)) setBeds(data.beds);
-            saveLS({settings:data.settings, beds:data.beds, version:remoteVer, pendingUpload:false});
-          }
-        } else if (isFirst) {
-          /* 서버에 문서 없음 → 로컬 기존 데이터 업로드 (보존) */
-          saveNow(settingsRef.current, bedsRef.current);
-        }
-        isFirst = false;
-      },
-      (err)=>{ console.error('onSnapshot 오류:',err); setSyncStatus('error'); }
-    );
-    return ()=>unsub();
-  },[userId, saveNow]);
-
-  const updateSettings = useCallback((s)=>{ setSettings(s); saveNow(s,bedsRef.current); },[saveNow]);
-  const updateBeds     = useCallback((fn)=>{
-    setBeds(prev=>{ const next=typeof fn==='function'?fn(prev):fn; saveNow(settingsRef.current,next); return next; });
+  const updateSettings = useCallback((ns)=>{ setSettings(ns); saveNow(ns,bedsRef.current); },[saveNow]);
+  const updateBeds = useCallback((uov)=>{
+    setBeds(prev=>{
+      const nb=typeof uov==='function'?uov(prev):uov;
+      saveNow(settingsRef.current,nb);
+      return nb;
+    });
   },[saveNow]);
 
-  return {settings, beds, updateSettings, updateBeds, syncStatus, isOnline};
+  /* [수정2] onSnapshot — isSaving 중·hasPendingWrites 모두 무시 */
+  useEffect(()=>{
+    if(!userId) return;
+    let isFirst=true;
+    const unsub=db.collection('wardData').doc(userId).onSnapshot(
+      (doc)=>{
+        if(doc.metadata.hasPendingWrites) return;
+        if(isSaving.current) return;            // 저장 중이면 루프 차단
+        if(doc.exists&&doc.data()?.beds){
+          const d=doc.data();
+          if(d.settings) setSettings(d.settings);
+          if(Array.isArray(d.beds)) setBeds(d.beds);
+          saveLS({settings:d.settings,beds:d.beds});
+        } else if(isFirst){
+          flushToFirestore(settingsRef.current,bedsRef.current);
+        }
+        isFirst=false;
+      },
+      (err)=>{ console.error('onSnapshot error:',err); setSyncStatus('error'); }
+    );
+    return ()=>{ unsub(); if(debounceTimer.current) clearTimeout(debounceTimer.current); };
+  },[userId,flushToFirestore]);
+
+  /* [수정3] 오프라인 → 온라인 복귀 시 미전송 데이터 재업로드 */
+  useEffect(()=>{
+    const handleOnline=()=>{ if(pendingData.current&&userId) flushToFirestore(pendingData.current.settings,pendingData.current.beds); };
+    window.addEventListener('online',handleOnline);
+    return ()=>window.removeEventListener('online',handleOnline);
+  },[userId,flushToFirestore]);
+
+  return {settings,beds,updateSettings,updateBeds,syncStatus};
 }
 
-/* ══════════════════════════════════════
-   SyncIndicator
-   ══════════════════════════════════════ */
-function SyncIndicator({status}) {
-  const map = {
-    saving:  {cls:'sync-saving',  icon:'⟳', text:'저장 중...',    spin:true },
-    saved:   {cls:'sync-ok',      icon:'✓', text:'저장됨',        spin:false},
-    error:   {cls:'sync-error',   icon:'✕', text:'동기화 오류',   spin:false},
-    offline: {cls:'sync-offline', icon:'●', text:'오프라인 저장', spin:false},
-  };
-  const cfg = map[status];
-  if (!cfg) return null;
-  return (
-    <span className={`sync-indicator ${cfg.cls}`}
-          style={{position:'absolute',top:5,left:'50%',transform:'translateX(-50%)',zIndex:50}}>
-      <span className={cfg.spin?'spin':''}>{cfg.icon}</span> {cfg.text}
-    </span>
-  );
-}
-
-/* ══════════════════════════════════════
-   BedCard
-   ══════════════════════════════════════ */
-function BedCard({bed, settings, onClick, onQuickDischarge}) {
-  const cfg     = STATUS[bed.status]||STATUS.empty;
-  const overdue = isOverdue(bed.status,settings);
-  const isEmpty = bed.status==='empty';
-  const hasPt   = !isEmpty && bed.patient.name;
-  return (
+/* ── BedCard ── */
+function BedCard({bed,settings,onClick,onQuickDischarge}){
+  const cfg=STATUS[bed.status]||STATUS.empty;
+  const overdue=isOverdue(bed.status,settings);
+  const isEmpty=bed.status==='empty';
+  const hasPatient=!isEmpty&&bed.patient.name;
+  return(
     <div className={`bed-card rounded-xl border-2 p-3${overdue?' overdue':''}`}
-         style={{background:cfg.bg,borderColor:cfg.border,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}
-         onClick={()=>onClick(bed)}>
+      style={{background:cfg.bg,borderColor:cfg.border,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}
+      onClick={()=>onClick(bed)}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:4,marginBottom:7}}>
         <span style={{fontWeight:800,fontSize:17,color:'#111827',letterSpacing:'-0.5px'}}>{bed.bedNumber}호</span>
-        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,whiteSpace:'nowrap',background:cfg.badgeBg,color:cfg.badgeText}}>
-          {cfg.label}
-        </span>
+        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,whiteSpace:'nowrap',background:cfg.badgeBg,color:cfg.badgeText}}>{cfg.label}</span>
       </div>
-      {hasPt ? (
+      {hasPatient?(
         <div>
           <div style={{fontSize:13,fontWeight:700,color:cfg.textColor,marginBottom:2}}>
-            {bed.patient.name}
-            {bed.patient.gender?`・${bed.patient.gender==='M'?'남':'여'}`:''}
-            {bed.patient.age?`・${bed.patient.age}세`:''}
+            {bed.patient.name}{bed.patient.gender?`・${bed.patient.gender==='M'?'남':'여'}`:''}{bed.patient.age?`・${bed.patient.age}세`:''}
           </div>
           {bed.patient.diagnosis&&<div style={{fontSize:11,color:'#9ca3af',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{bed.patient.diagnosis}</div>}
           {bed.patient.admittedDate&&<div style={{fontSize:11,fontWeight:600,color:'#374151',marginTop:4}}>입원일 {bed.patient.admittedDate}</div>}
@@ -391,22 +226,19 @@ function BedCard({bed, settings, onClick, onQuickDischarge}) {
       {overdue&&(
         <div style={{marginTop:6,display:'flex',alignItems:'center',justifyContent:'space-between'}} onClick={e=>e.stopPropagation()}>
           <span style={{fontSize:11,color:'#ef4444',fontWeight:700}}>시간 초과</span>
-          <button className="btn btn-sm btn-danger" style={{padding:'3px 8px',fontSize:11}}
-                  onClick={e=>{e.stopPropagation();onQuickDischarge(bed);}}>퇴원 완료</button>
+          <button className="btn btn-sm btn-danger" onClick={e=>{e.stopPropagation();onQuickDischarge(bed);}} style={{padding:'3px 8px',fontSize:11}}>퇴원 완료</button>
         </div>
       )}
     </div>
   );
 }
 
-/* ══════════════════════════════════════
-   BedModal
-   ══════════════════════════════════════ */
-function BedModal({bed, onSave, onClose}) {
-  const [status,  setStatus]  = useState(bed.status);
-  const [patient, setPatient] = useState({...EMPTY_PATIENT,...bed.patient});
-  const setField = (f,v) => setPatient(p=>({...p,[f]:v}));
-  return (
+/* ── BedModal ── */
+function BedModal({bed,onSave,onClose}){
+  const [status,setStatus]=useState(bed.status);
+  const [patient,setPatient]=useState({...EMPTY_PATIENT,...bed.patient});
+  const setField=(f,v)=>setPatient(p=>({...p,[f]:v}));
+  return(
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal-box">
         <div className="flex justify-between items-center mb-4">
@@ -447,7 +279,7 @@ function BedModal({bed, onSave, onClose}) {
             <div><label className="form-label">진단명</label><input className="form-input" value={patient.diagnosis} onChange={e=>setField('diagnosis',e.target.value)}/></div>
             <div><label className="form-label">메모</label><textarea className="form-input" value={patient.notes} onChange={e=>setField('notes',e.target.value)} rows={2}/></div>
             <div className={`flex items-center gap-2 p-3 rounded-lg border-2 cursor-pointer ${patient.isSurgery?'bg-orange-50 border-orange-200':'bg-gray-50 border-gray-200'}`}
-                 onClick={()=>setField('isSurgery',!patient.isSurgery)}>
+              onClick={()=>setField('isSurgery',!patient.isSurgery)}>
               <input type="checkbox" checked={patient.isSurgery} readOnly className="w-4 h-4"/>
               <span className="text-sm font-bold">수술 환자 (자동 전환 예외)</span>
             </div>
@@ -465,13 +297,11 @@ function BedModal({bed, onSave, onClose}) {
   );
 }
 
-/* ══════════════════════════════════════
-   SettingsModal
-   ══════════════════════════════════════ */
-function SettingsModal({settings, onSave, onClose}) {
+/* ── SettingsModal ── */
+function SettingsModal({settings,onSave,onClose}){
   const [form,setForm]=useState({...settings});
   const set=(f,v)=>setForm(p=>({...p,[f]:v}));
-  return (
+  return(
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal-box">
         <h2 className="text-xl font-extrabold mb-4">병동 설정</h2>
@@ -495,43 +325,49 @@ function SettingsModal({settings, onSave, onClose}) {
   );
 }
 
-/* ══════════════════════════════════════
-   Login
-   ══════════════════════════════════════ */
-function Login({onLogin}) {
+/* ── SyncIndicator (saved 상태 추가) ── */
+function SyncIndicator({status}){
+  const map={
+    saving:{cls:'sync-saving',icon:'⟳',text:'저장 중...'},
+    saved: {cls:'sync-ok',   icon:'✓',text:'저장됨'},
+    error: {cls:'sync-error',icon:'✕',text:'동기화 오류'},
+  };
+  const cfg=map[status];
+  if(!cfg) return null;
+  return(
+    <span className={`sync-indicator ${cfg.cls}`} style={{position:'absolute',top:5,left:'50%',transform:'translateX(-50%)',zIndex:50}}>
+      <span className={status==='saving'?'spin':''}>{cfg.icon}</span> {cfg.text}
+    </span>
+  );
+}
+
+/* ── Login ── */
+function Login({onLogin}){
   const [isSignUp,setIsSignUp]=useState(false);
   const [isLoading,setIsLoading]=useState(false);
   const [form,setForm]=useState({email:'',password:'',confirmPassword:''});
   const setField=(f,v)=>setForm(p=>({...p,[f]:v}));
   const handleSubmit=async(e)=>{
     e.preventDefault(); setIsLoading(true);
-    try {
-      if (isSignUp) {
-        if (form.password!==form.confirmPassword){alert('비밀번호가 일치하지 않습니다.');return;}
+    try{
+      if(isSignUp){
+        if(form.password!==form.confirmPassword){alert('비밀번호가 일치하지 않습니다.');setIsLoading(false);return;}
         onLogin(await signUpUser(form.email,form.password));
-      } else {
-        onLogin(await signInUser(form.email,form.password));
-      }
-    } catch(err){alert(err.message||'인증 중 오류가 발생했습니다.');}
+      } else { onLogin(await signInUser(form.email,form.password)); }
+    }catch(err){alert(err.message||'인증 중 오류가 발생했습니다.');}
     finally{setIsLoading(false);}
   };
-  return (
+  return(
     <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
       <div className="bg-white p-10 rounded-2xl shadow-xl text-center w-full" style={{maxWidth:'520px'}}>
-        <h1 className="text-2xl font-black mb-2" style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-          210정형외과 병동관리시스템
-        </h1>
+        <h1 className="text-2xl font-black mb-2" style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>210정형외과 병동관리시스템</h1>
         <p className="text-gray-500 mb-8 text-sm">여러 기기에서 병동 현황을 동기화하려면 로그인하세요.</p>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input type="email" placeholder="이메일" value={form.email} onChange={e=>setField('email',e.target.value)}
-                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required/>
-          <input type="password" placeholder="비밀번호" value={form.password} onChange={e=>setField('password',e.target.value)}
-                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required/>
-          {isSignUp&&<input type="password" placeholder="비밀번호 확인" value={form.confirmPassword} onChange={e=>setField('confirmPassword',e.target.value)}
-                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required/>}
-          <button type="submit" disabled={isLoading}
-                  className="w-full bg-blue-500 text-white py-3 rounded-lg font-bold hover:bg-blue-600 disabled:opacity-50">
-            {isLoading?'처리 중...':(isSignUp?'회원가입':'로그인')}
+          <input type="email" placeholder="이메일" value={form.email} onChange={e=>setField('email',e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required/>
+          <input type="password" placeholder="비밀번호" value={form.password} onChange={e=>setField('password',e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required/>
+          {isSignUp&&<input type="password" placeholder="비밀번호 확인" value={form.confirmPassword} onChange={e=>setField('confirmPassword',e.target.value)} className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required/>}
+          <button type="submit" disabled={isLoading} className="w-full bg-blue-500 text-white py-3 rounded-lg font-bold hover:bg-blue-600 disabled:opacity-50">
+            {isSignUp?'회원가입':'로그인'}
           </button>
         </form>
         <button type="button" onClick={()=>setIsSignUp(!isSignUp)} className="mt-4 text-blue-500 hover:underline">
@@ -542,60 +378,42 @@ function Login({onLogin}) {
   );
 }
 
-/* ══════════════════════════════════════
-   App (메인)
-   ══════════════════════════════════════ */
-function App() {
-  const [isLoggedIn,    setIsLoggedIn]    = useState(false);
-  const [userId,        setUserId]        = useState(null);
-  const [isCheckingAuth,setIsCheckingAuth]= useState(true);
-  const [filter,        setFilter]        = useState('all');
-  const [selectedBed,   setSelectedBed]   = useState(null);
-  const [showSettings,  setShowSettings]  = useState(false);
-  const [nowDisplay,    setNowDisplay]    = useState(getNowDisplay());
+/* ── App ── */
+function App(){
+  const [isLoggedIn,setIsLoggedIn]=useState(false);
+  const [userId,setUserId]=useState(null);
+  const [isCheckingAuth,setIsCheckingAuth]=useState(true);
+  const [filter,setFilter]=useState('all');
+  const [selectedBed,setSelectedBed]=useState(null);
+  const [showSettings,setShowSettings]=useState(false);
+  const [nowDisplay,setNowDisplay]=useState(getNowDisplay());
 
   useEffect(()=>{
-    const unsub=auth.onAuthStateChanged(user=>{
+    const unsub=auth.onAuthStateChanged((user)=>{
       if(user){setUserId(user.uid);setIsLoggedIn(true);}
       else{setIsLoggedIn(false);setUserId(null);}
       setIsCheckingAuth(false);
     });
-    return ()=>unsub();
+    return()=>unsub();
   },[]);
 
-  const {settings,beds,updateSettings,updateBeds,syncStatus,isOnline} = useFirestoreSync(userId);
+  const {settings,beds,updateSettings,updateBeds,syncStatus}=useFirestoreSync(userId);
 
-  useEffect(()=>{
-    const tick=setInterval(()=>setNowDisplay(getNowDisplay()),60000);
-    return ()=>clearInterval(tick);
-  },[]);
+  useEffect(()=>{ const t=setInterval(()=>setNowDisplay(getNowDisplay()),60000); return()=>clearInterval(t); },[]);
 
-  const stats = useMemo(()=>{
-    const c={all:beds.length};
-    Object.keys(STATUS).forEach(k=>c[k]=beds.filter(b=>b.status===k).length);
-    return c;
-  },[beds]);
+  const stats=useMemo(()=>{ const c={all:beds.length}; Object.keys(STATUS).forEach(k=>c[k]=beds.filter(b=>b.status===k).length); return c; },[beds]);
+  const filteredBeds=useMemo(()=>filter==='all'?beds:beds.filter(b=>b.status===filter),[beds,filter]);
 
-  const filteredBeds = useMemo(()=>filter==='all'?beds:beds.filter(b=>b.status===filter),[beds,filter]);
+  if(isCheckingAuth) return <div className="flex items-center justify-center min-h-screen bg-gray-100"><div className="text-xl font-bold text-gray-700">로그인 상태 확인 중...</div></div>;
+  if(!isLoggedIn) return <Login onLogin={(uid)=>{setUserId(uid);setIsLoggedIn(true);}}/>;
 
-  if (isCheckingAuth) return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="text-xl font-bold text-gray-700">로그인 상태 확인 중...</div>
-    </div>
-  );
-
-  if (!isLoggedIn) return <Login onLogin={uid=>{setUserId(uid);setIsLoggedIn(true);}}/>;
-
-  return (
+  return(
     <div className="max-w-7xl mx-auto p-4" style={{position:'relative'}}>
       <SyncIndicator status={syncStatus}/>
       <header className="bg-white p-5 rounded-2xl shadow-sm flex justify-between items-center mb-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900">{settings.wardName}</h1>
-          <p className="text-xs text-gray-400 mt-1">
-            {nowDisplay.dateStr} {nowDisplay.timeStr} &nbsp;•&nbsp; 입원 {beds.filter(b=>b.status!=='empty').length}명
-            {!isOnline&&<span style={{color:'#f59e0b',fontWeight:700}}> &nbsp;• 오프라인</span>}
-          </p>
+          <p className="text-xs text-gray-400 mt-1">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b=>b.status!=='empty').length}명</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="btn btn-gray" onClick={()=>setShowSettings(true)}>환경 설정</button>
@@ -604,15 +422,14 @@ function App() {
       </header>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
-        <div onClick={()=>setFilter('all')}
-             className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${filter==='all'?'bg-gray-800 border-gray-800 text-white':'bg-white'}`}>
+        <div onClick={()=>setFilter('all')} className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${filter==='all'?'bg-gray-800 border-gray-800 text-white':'bg-white'}`}>
           <div className="text-xl font-black">{stats.all}</div>
           <div className="text-[10px] opacity-80 uppercase font-bold">전체</div>
         </div>
         {Object.entries(STATUS).map(([key,cfg])=>(
           <div key={key} onClick={()=>setFilter(key)}
-               className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${filter===key?'border-current':'bg-white opacity-60'}`}
-               style={{color:cfg.color,borderColor:filter===key?cfg.color:'#e5e7eb',background:filter===key?cfg.bg:''}}>
+            className={`p-3 rounded-xl border-2 cursor-pointer transition-all ${filter===key?'border-current':'bg-white opacity-60'}`}
+            style={{color:cfg.color,borderColor:filter===key?cfg.color:'#e5e7eb',background:filter===key?cfg.bg:''}}>
             <div className="text-xl font-black">{stats[key]}</div>
             <div className="text-[10px] text-gray-500 font-bold">{cfg.label}</div>
           </div>
@@ -622,27 +439,20 @@ function App() {
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
         {filteredBeds.map(bed=>(
           <BedCard key={bed.id} bed={bed} settings={settings} onClick={setSelectedBed}
-            onQuickDischarge={b=>updateBeds(prev=>prev.map(x=>x.id===b.id?{...x,status:'empty',patient:{...EMPTY_PATIENT}}:x))}/>
+            onQuickDischarge={(b)=>updateBeds(prev=>prev.map(x=>x.id===b.id?{...x,status:'empty',patient:{...EMPTY_PATIENT}}:x))}/>
         ))}
       </div>
 
-      {selectedBed&&(
-        <BedModal bed={selectedBed} onClose={()=>setSelectedBed(null)}
-          onSave={updated=>{updateBeds(prev=>prev.map(b=>b.id===updated.id?updated:b));setSelectedBed(null);}}/>
-      )}
-      {showSettings&&(
-        <SettingsModal settings={settings} onClose={()=>setShowSettings(false)}
-          onSave={s=>{
-            updateSettings(s);
-            updateBeds(prev=>makeBeds(parseInt(s.totalBeds),parseInt(s.startBedNumber),s.bedPrefix,prev));
-            setShowSettings(false);
-          }}/>
-      )}
+      {selectedBed&&<BedModal bed={selectedBed} onClose={()=>setSelectedBed(null)}
+        onSave={(updated)=>{updateBeds(prev=>prev.map(b=>b.id===updated.id?updated:b));setSelectedBed(null);}}/>}
+      {showSettings&&<SettingsModal settings={settings} onClose={()=>setShowSettings(false)}
+        onSave={(s)=>{updateSettings(s);updateBeds(prev=>makeBeds(parseInt(s.totalBeds),parseInt(s.startBedNumber),s.bedPrefix,prev));setShowSettings(false);}}/>}
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+const root=ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App/>);
 </script>
 </body>
 </html>
