@@ -1,248 +1,58 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>210정형외과 병동관리시스템</title>
-  
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script type="module">
+  // Firebase SDK 가져오기
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js";
 
-  <style>
-    * { box-sizing: border-box; font-family: 'Malgun Gothic', -apple-system, sans-serif; }
-    body { background: #f1f5f9; margin: 0; min-height: 100vh; color: #1e293b; }
-    .bed-card { cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border-radius: 16px; background: white; border: 2px solid #e2e8f0; }
-    .bed-card:hover { transform: translateY(-4px); box-shadow: 0 12px 20px -5px rgba(0,0,0,0.1); border-color: #3b82f6; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; backdrop-filter: blur(4px); }
-    .custom-scroll::-webkit-scrollbar { width: 6px; }
-    .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-  </style>
-</head>
-<body>
-  <div id="root"></div>
+  // 질문자님의 설정값
+  const firebaseConfig = {
+    apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI",
+    authDomain: "gen-lang-client-0584117357.firebaseapp.com",
+    projectId: "gen-lang-client-0584117357",
+    storageBucket: "gen-lang-client-0584117357.firebasestorage.app",
+    messagingSenderId: "117986366738",
+    appId: "1:117986366738:web:08d7b55ac07479d9cf4fcb",
+    measurementId: "G-99DNYLR26W"
+  };
 
-  <script type="text/babel">
-    // --- 1. Firebase 설정 (API Key 공백 제거 완료) ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI",
-      authDomain: "gen-lang-client-0584117357.firebaseapp.com",
-      projectId: "gen-lang-client-0584117357",
-      storageBucket: "gen-lang-client-0584117357.firebasestorage.app",
-      messagingSenderId: "117986366738",
-      appId: "1:117986366738:web:08d7b55ac07479d9cf4fcb"
-    };
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
 
-    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
+  // 전역 변수로 설정 (기존 HTML 버튼에서 호출할 수 있게)
+  window.db = db;
+  window.doc = doc;
+  window.setDoc = setDoc;
 
-    const { useState, useEffect, useMemo } = React;
+  // --- 추가: 데이터 실시간 불러오기 ---
+  // 페이지가 로드될 때 Firebase에서 데이터를 가져와 화면에 그립니다.
+  const bedIds = ['501', '502', '503', '504', '505', '506', '507', '508', '509'];
+  bedIds.forEach(id => {
+    onSnapshot(doc(db, "ward", id), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        updateUI(id, data);
+      }
+    });
+  });
 
-    const STATUS_MAP = {
-      empty: { label: '비어 있음', color: '#94a3b8', bg: '#f8fafc' },
-      admitted: { label: '입원 중', color: '#3b82f6', bg: '#eff6ff' },
-      morning: { label: '오전 퇴원', color: '#f59e0b', bg: '#fffbeb' },
-      afternoon: { label: '오후 퇴원', color: '#f97316', bg: '#fff7ed' },
-      surgery: { label: '수술 예정', color: '#ef4444', bg: '#fef2f2' }
-    };
+  function updateUI(id, data) {
+    const card = document.getElementById(`bed-${id}`);
+    if (!card) return;
+    
+    card.className = `bed-card ${data.status}`;
+    card.querySelector('.status-badge').textContent = getStatusText(data.status);
+    card.querySelector('.patient-info').innerHTML = `
+      <strong>${data.name}</strong> · ${data.gender} · ${data.age}세<br>
+      <small>${data.diagnosis}</small>
+    `;
+    card.querySelector('.date-info').innerHTML = `
+      입원일 ${data.admissionDate}<br>
+      퇴원일 ${data.dischargeDate} · ${data.dDay}
+    `;
+    card.querySelector('.memo-info').textContent = data.memo;
+  }
 
-    function App() {
-      const [beds, setBeds] = useState([]);
-      const [settings, setSettings] = useState({ totalBeds: 12, startBedNumber: 1, bedPrefix: '' });
-      const [filter, setFilter] = useState('all');
-      const [selectedBed, setSelectedBed] = useState(null);
-      const [showSettings, setShowSettings] = useState(false);
-      const [loading, setLoading] = useState(true);
-
-      // 2. 실시간 동기화 리스너 (데이터 유지 핵심)
-      useEffect(() => {
-        // 설정값 불러오기
-        const unsubSettings = db.collection("config").doc("appSettings").onSnapshot(doc => {
-          if (doc.exists) setSettings(doc.data());
-        });
-
-        // 병상 데이터 불러오기
-        const unsubBeds = db.collection("ward").onSnapshot(snapshot => {
-          const items = [];
-          snapshot.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
-          setBeds(items);
-          setLoading(false);
-        });
-
-        return () => { unsubSettings(); unsubBeds(); };
-      }, []);
-
-      // 3. 통계 계산
-      const stats = useMemo(() => {
-        const s = { all: beds.length, empty: 0, admitted: 0, morning: 0, afternoon: 0, surgery: 0 };
-        beds.forEach(b => { if(s[b.status] !== undefined) s[b.status]++; });
-        return s;
-      }, [beds]);
-
-      // 4. 필터링 및 정렬
-      const filteredBeds = useMemo(() => {
-        return beds
-          .filter(b => filter === 'all' || b.status === filter)
-          .sort((a, b) => a.id.localeCompare(b.id, undefined, {numeric: true}));
-      }, [beds, filter]);
-
-      // 5. 서버 저장 로직
-      const handleSaveBed = async (id, data) => {
-        try {
-          await db.collection("ward").doc(id).set(data, { merge: true });
-          setSelectedBed(null);
-        } catch (e) { alert("저장 실패! 인터넷 연결이나 권한을 확인하세요."); }
-      };
-
-      const handleQuickDischarge = async (id) => {
-        if(!confirm("퇴원 처리하시겠습니까? 데이터가 초기화됩니다.")) return;
-        await db.collection("ward").doc(id).set({ status: 'empty', name: '', memo: '' }, { merge: true });
-      };
-
-      const handleApplySettings = async (newSettings) => {
-        try {
-          await db.collection("config").doc("appSettings").set(newSettings);
-          const batch = db.batch();
-          for(let i=0; i < newSettings.totalBeds; i++) {
-            const id = `${newSettings.bedPrefix}${newSettings.startBedNumber + i}`;
-            batch.set(db.collection("ward").doc(id), { status: 'empty', name: '', memo: '' }, { merge: true });
-          }
-          await batch.commit();
-          setShowSettings(false);
-        } catch (e) { alert("설정 적용 실패!"); }
-      };
-
-      if(loading) return <div className="flex h-screen items-center justify-center font-bold text-slate-400 animate-pulse text-xl uppercase tracking-tighter">System Initializing...</div>;
-
-      return (
-        <div className="max-w-7xl mx-auto p-4 md:p-10">
-          {/* 헤더 섹션 */}
-          <header className="flex justify-between items-center mb-10 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
-            <div>
-              <h1 className="text-3xl font-black text-slate-800 tracking-tight">210 병동관리시스템</h1>
-              <p className="text-slate-400 font-bold text-[10px] uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-ping"></span> Real-time Cloud Sync Active
-              </p>
-            </div>
-            <button onClick={() => setShowSettings(true)} className="w-12 h-12 flex items-center justify-center bg-slate-50 text-slate-600 rounded-2xl hover:bg-slate-100 transition-all text-2xl shadow-inner">⚙️</button>
-          </header>
-
-          {/* 화려한 통계 대시보드 */}
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-4 mb-10">
-            {[{id:'all', label:'전체', color:'#475569'}, ...Object.entries(STATUS_MAP).map(([k,v])=>({id:k, ...v}))].map(item => (
-              <div key={item.id} onClick={() => setFilter(item.id)}
-                   className={`p-5 rounded-3xl cursor-pointer transition-all border-2 ${filter === item.id ? 'bg-white border-slate-800 shadow-xl scale-105' : 'bg-white/50 border-transparent hover:bg-white hover:border-slate-200'}`}>
-                <div className="text-3xl font-black mb-1" style={{ color: item.color }}>{stats[item.id] || 0}</div>
-                <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider">{item.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* 병상 그리드 디자인 */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-5">
-            {filteredBeds.map(bed => {
-              const cfg = STATUS_MAP[bed.status] || STATUS_MAP.empty;
-              return (
-                <div key={bed.id} className="bed-card p-5 border-2 flex flex-col justify-between min-h-[160px]" 
-                     style={{ borderColor: bed.status === 'empty' ? '#f1f5f9' : cfg.color }}>
-                  <div onClick={() => setSelectedBed({...bed})}>
-                    <div className="flex justify-between items-start mb-5">
-                      <span className="text-2xl font-black text-slate-700 leading-none">{bed.id}</span>
-                      <span className="text-[9px] font-black px-2 py-1 rounded-lg text-white uppercase" style={{ backgroundColor: cfg.color }}>{cfg.label}</span>
-                    </div>
-                    <div className="mb-4">
-                      <div className="font-black text-slate-800 text-lg leading-tight truncate">{bed.name || <span className="text-slate-200 italic font-normal">비어 있음</span>}</div>
-                      <div className="text-[10px] text-slate-400 font-bold mt-1 line-clamp-2 opacity-70">{bed.memo}</div>
-                    </div>
-                  </div>
-                  {bed.status !== 'empty' && (
-                    <button onClick={() => handleQuickDischarge(bed.id)} 
-                            className="w-full py-2.5 text-[10px] font-black bg-slate-50 text-slate-400 rounded-xl hover:bg-red-50 hover:text-red-500 transition-all uppercase">
-                      Quick Discharge
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* 환자 정보 수정 모달 */}
-          {selectedBed && (
-            <div className="modal-overlay" onClick={() => setSelectedBed(null)}>
-              <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
-                <div className="flex justify-between items-center mb-8">
-                  <h2 className="text-2xl font-black text-slate-800">{selectedBed.id}호 상세 관리</h2>
-                  <button onClick={() => setSelectedBed(null)} className="text-slate-300 hover:text-slate-800 transition-colors">✕</button>
-                </div>
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-3 ml-1">환자 상태 설정</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {Object.entries(STATUS_MAP).map(([k, v]) => (
-                        <button key={k} onClick={() => setSelectedBed({...selectedBed, status: k})}
-                                className={`py-3.5 rounded-2xl text-xs font-bold border-2 transition-all ${selectedBed.status === k ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-100 text-slate-500 hover:bg-slate-50'}`}>
-                          {v.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-2 ml-1">환자 성함</label>
-                    <input className="w-full border-2 border-slate-100 p-4 rounded-2xl focus:border-blue-500 outline-none font-black text-lg transition-all"
-                           value={selectedBed.name} onChange={e => setSelectedBed({...selectedBed, name: e.target.value})} placeholder="성함을 입력하세요" />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-2 ml-1">주요 특이사항</label>
-                    <textarea className="w-full border-2 border-slate-100 p-4 rounded-2xl focus:border-blue-500 outline-none h-32 resize-none text-sm font-medium transition-all"
-                              value={selectedBed.memo} onChange={e => setSelectedBed({...selectedBed, memo: e.target.value})} placeholder="간호 기록 및 메모를 입력하세요" />
-                  </div>
-                </div>
-                <div className="flex gap-4 mt-10">
-                  <button className="flex-[1] bg-slate-100 text-slate-500 font-black py-4 rounded-2xl hover:bg-slate-200 transition-all" onClick={() => setSelectedBed(null)}>취소</button>
-                  <button className="flex-[2] bg-blue-600 text-white font-black py-4 rounded-2xl shadow-xl shadow-blue-200 hover:bg-blue-700 transition-all" 
-                          onClick={() => handleSaveBed(selectedBed.id, selectedBed)}>데이터 업데이트</button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 시스템 설정 모달 */}
-          {showSettings && (
-            <div className="modal-overlay" onClick={() => setShowSettings(false)}>
-              <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-black mb-8 border-b border-slate-100 pb-5">환경 설정</h2>
-                <div className="space-y-5">
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-2">총 병상 개수</label>
-                    <input type="number" className="w-full border-2 border-slate-100 p-4 rounded-2xl font-black focus:border-slate-800 outline-none" 
-                           value={settings.totalBeds} onChange={e => setSettings({...settings, totalBeds: parseInt(e.target.value)})} />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-2">시작 번호</label>
-                    <input type="number" className="w-full border-2 border-slate-100 p-4 rounded-2xl font-black focus:border-slate-800 outline-none" 
-                           value={settings.startBedNumber} onChange={e => setSettings({...settings, startBedNumber: parseInt(e.target.value)})} />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-2">병상 접두사</label>
-                    <input type="text" className="w-full border-2 border-slate-100 p-4 rounded-2xl font-black focus:border-slate-800 outline-none" 
-                           value={settings.bedPrefix} onChange={e => setSettings({...settings, bedPrefix: e.target.value})} placeholder="없음" />
-                  </div>
-                </div>
-                <button className="w-full bg-slate-900 text-white font-black py-5 rounded-2xl mt-10 shadow-2xl hover:bg-black transition-all" 
-                        onClick={() => handleApplySettings(settings)}>설정 저장 및 동기화</button>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
-</body>
-</html>
+  function getStatusText(status) {
+    const texts = { 'empty': '비어 있음', 'occupied': '입원 중', 'scheduled-in': '오후 입원 예정', 'scheduled-out': '오전 퇴원 예정' };
+    return texts[status] || '상태 미정';
+  }
+</script>
