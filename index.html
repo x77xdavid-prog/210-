@@ -669,3 +669,32 @@ root.render(<App />);
 </script>
 </body>
 </html>
+<script type="module">
+  // 1. Firebase 라이브러리 가져오기 (CDN 방식)
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js";
+  import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js";
+
+  // 2. 질문자님의 Firebase 설정값 (스크린샷에 있던 내용)
+  const firebaseConfig = {
+    apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gc pI",
+    authDomain: "gen-lang-client-0584117357.firebaseapp.com",
+    projectId: "gen-lang-client-0584117357",
+    storageBucket: "gen-lang-client-0584117357.firebasestorage.app",
+    messagingSenderId: "117986366738",
+    appId: "1:117986366738:web:08d7b55ac07479d9cf4fcb",
+    measurementId: "G-99DNYLR26W"
+  };
+
+  // 3. Firebase 초기화
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app); // 이제 'db'를 통해 데이터를 저장합니다!
+
+  // [중요] 저장 버튼을 누를 때 실행될 함수 예시
+  window.saveToFirebase = async (roomNum, data) => {
+    await setDoc(doc(db, "ward", roomNum), {
+      content: data,
+      time: new Date()
+    });
+    console.log("데이터가 클라우드에 저장되었습니다!");
+  };
+</script>
