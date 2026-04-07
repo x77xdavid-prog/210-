@@ -119,9 +119,9 @@ function useFirestoreSync(userId){
 
   const settingsRef   = useRef(settings);
   const bedsRef       = useRef(beds);
-  const isSaving      = useRef(false);   // [수정2] 저장 중 onSnapshot 차단
-  const debounceTimer = useRef(null);    // [수정1] 디바운스 타이머
-  const pendingData   = useRef(null);    // [수정3] 오프라인 미전송 데이터
+  const lastSaveTime  = useRef(0);       // 마지막 저장 완료 시각 (ms)
+  const debounceTimer = useRef(null);    // 디바운스 타이머
+  const pendingData   = useRef(null);    // 오프라인 미전송 데이터
 
   settingsRef.current=settings;
   bedsRef.current=beds;
@@ -129,13 +129,13 @@ function useFirestoreSync(userId){
   /* 실제 Firestore 저장 */
   const flushToFirestore = useCallback(async(s,b)=>{
     if(!userId) return;
-    isSaving.current=true;
     setSyncStatus('saving');
     try {
       await db.collection('wardData').doc(userId).set({
         settings:s, beds:b,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
+      lastSaveTime.current = Date.now(); // 저장 완료 시각 기록
       pendingData.current=null;
       setSyncStatus('saved');
       setTimeout(()=>setSyncStatus('idle'),2000);
@@ -143,14 +143,12 @@ function useFirestoreSync(userId){
       console.error('Firestore save failed:',err);
       pendingData.current={settings:s,beds:b};
       setSyncStatus('error');
-    } finally {
-      isSaving.current=false;
     }
   },[userId]);
 
-  /* [수정1] 디바운스 저장 — 1초 내 연속 수정은 마지막 것만 전송 */
+  /* 디바운스 저장 — 1초 내 연속 수정은 마지막 것만 전송 */
   const saveNow = useCallback((s,b)=>{
-    saveLS({settings:s,beds:b});                              // 로컬 즉시
+    saveLS({settings:s,beds:b});
     if(debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current=setTimeout(()=>flushToFirestore(s,b),1000);
   },[flushToFirestore]);
@@ -164,14 +162,15 @@ function useFirestoreSync(userId){
     });
   },[saveNow]);
 
-  /* [수정2] onSnapshot — isSaving 중·hasPendingWrites 모두 무시 */
+  /* onSnapshot — 내가 저장한 직후 3초 이내 수신은 무시 (루프 차단) */
   useEffect(()=>{
     if(!userId) return;
     let isFirst=true;
     const unsub=db.collection('wardData').doc(userId).onSnapshot(
       (doc)=>{
         if(doc.metadata.hasPendingWrites) return;
-        if(isSaving.current) return;            // 저장 중이면 루프 차단
+        // 내가 저장한 직후 3초 이내면 무시 (무한루프 방지, 단 영구 차단 아님)
+        if(Date.now() - lastSaveTime.current < 3000) return;
         if(doc.exists&&doc.data()?.beds){
           const d=doc.data();
           if(d.settings) setSettings(d.settings);
