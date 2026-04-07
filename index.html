@@ -495,17 +495,15 @@ function SettingsModal({ settings, onSave, onClose }) {
 
 /* ── 컴포넌트: SyncIndicator ── */
 function SyncIndicator({ status }) {
-  if (status === 'idle') return null;
   const map = {
     saving: { cls: 'sync-saving', icon: '⟳', text: '저장 중...' },
     saved:  { cls: 'sync-ok',     icon: '✓', text: '동기화 완료' },
     error:  { cls: 'sync-error',  icon: '✕', text: '동기화 오류' },
   };
   const cfg = map[status];
-  if (!cfg) return null;
   return (
-    <span className={`sync-indicator ${cfg.cls}`}>
-      <span className={status === 'saving' ? 'spin' : ''}>{cfg.icon}</span> {cfg.text}
+    <span className={`sync-indicator ${cfg ? cfg.cls : ''}`} style={{ visibility: cfg ? 'visible' : 'hidden' }}>
+      {cfg ? (<><span className={status === 'saving' ? 'spin' : ''}>{cfg.icon}</span> {cfg.text}</>) : '\u00A0'}
     </span>
   );
 }
