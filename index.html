@@ -222,12 +222,12 @@ function signOutUser() { return auth.signOut(); }
 
 
 /* ══════════════════════════════════════════════
-   커스텀 훅: useFirestoreSync
+   커스텀 훅: useFirestoreSync v3
    
-   핵심 전략:
-   - onSnapshot으로 실시간 수신
-   - 사용자 조작 시에만 Firestore에 저장 (isLocalChange 플래그)
-   - JSON 비교로 불필요한 저장 방지
+   전략: 단순하게!
+   - 저장: 즉시 Firestore에 쓰기 (디바운스 없음)
+   - 수신: onSnapshot에서 로컬 버전과 비교, 
+           로컬이 최신이면 무시
    ══════════════════════════════════════════════ */
 function useFirestoreSync(userId) {
   const [settings, setSettings] = useState(() => {
@@ -242,63 +242,54 @@ function useFirestoreSync(userId) {
 
   const settingsRef = useRef(settings);
   const bedsRef     = useRef(beds);
-  const saveTimerRef = useRef(null);
-  const lastSavedJSON = useRef('');       // 마지막 저장/수신한 데이터의 JSON
-  const pendingSave = useRef(false);       // 저장 예약 여부
+  const localVersion = useRef(0);        // 로컬 변경 카운터
+  const confirmedVersion = useRef(0);     // Firestore에 확인된 버전
+  const skipNextSnapshot = useRef(false); // 내 저장 직후 snapshot 무시
 
   settingsRef.current = settings;
   bedsRef.current     = beds;
 
-  // ── Firestore에 저장 ──
-  const doSave = useCallback(async (s, b) => {
+  // ── Firestore에 즉시 저장 ──
+  const saveNow = useCallback(async (s, b) => {
     if (!userId) return;
-    const json = JSON.stringify({ settings: s, beds: b });
-    if (json === lastSavedJSON.current) {
-      setSyncStatus('idle');
-      pendingSave.current = false;
-      return;
-    }
-    // 저장 전에 lastSavedJSON을 미리 업데이트 → onSnapshot이 같은 데이터로 판단하여 무시
-    lastSavedJSON.current = json;
-    setSyncStatus('saving');
+    
+    // 로컬 버전 증가
+    localVersion.current += 1;
+    const myVersion = localVersion.current;
+    
+    // 로컬 스토리지 즉시 저장
+    saveLocalStorage({ settings: s, beds: b });
+    
+    // 내 저장에 의한 snapshot 무시 플래그
+    skipNextSnapshot.current = true;
+
     try {
       await db.collection('wardData').doc(userId).set({
         settings: s,
         beds: b,
+        version: myVersion,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-      pendingSave.current = false;
-      setSyncStatus('idle');
+      confirmedVersion.current = myVersion;
     } catch (err) {
       console.error('Firestore save failed:', err);
-      pendingSave.current = false;
       setSyncStatus('error');
     }
   }, [userId]);
 
-  // 디바운스 저장 스케줄러
-  const scheduleSave = useCallback((s, b) => {
-    saveLocalStorage({ settings: s, beds: b });
-    // 즉시 lastSavedJSON 업데이트 → onSnapshot이 진행 중인 변경을 덮어쓰지 않도록
-    lastSavedJSON.current = JSON.stringify({ settings: s, beds: b });
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    pendingSave.current = true;
-    saveTimerRef.current = setTimeout(() => doSave(s, b), 800);
-  }, [doSave]);
-
   // ── 사용자 조작용 업데이트 함수 ──
   const updateSettings = useCallback((newSettings) => {
     setSettings(newSettings);
-    setTimeout(() => scheduleSave(newSettings, bedsRef.current), 0);
-  }, [scheduleSave]);
+    saveNow(newSettings, bedsRef.current);
+  }, [saveNow]);
 
   const updateBeds = useCallback((updaterOrValue) => {
     setBeds(prev => {
       const newBeds = typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue;
-      setTimeout(() => scheduleSave(settingsRef.current, newBeds), 0);
+      saveNow(settingsRef.current, newBeds);
       return newBeds;
     });
-  }, [scheduleSave]);
+  }, [saveNow]);
 
   // ── onSnapshot 실시간 리스너 ──
   useEffect(() => {
@@ -307,30 +298,48 @@ function useFirestoreSync(userId) {
 
     const unsubscribe = db.collection('wardData').doc(userId).onSnapshot(
       (doc) => {
-        // 로컬에서 방금 쓴 pending write는 무시
+        // 로컬 pending write 무시
         if (doc.metadata.hasPendingWrites) return;
 
-        // 로컬 저장이 진행 중이면 원격 데이터 무시 (로컬 변경이 우선)
-        if (pendingSave.current) return;
+        // 내가 방금 저장한 결과가 돌아온 거면 무시
+        if (skipNextSnapshot.current) {
+          skipNextSnapshot.current = false;
+          return;
+        }
 
         if (doc.exists && doc.data()?.beds) {
           const data = doc.data();
-          const json = JSON.stringify({ settings: data.settings, beds: data.beds });
+          const remoteVersion = data.version || 0;
 
-          // 이미 같은 데이터면 무시
-          if (json === lastSavedJSON.current && !isFirst) return;
+          // 로컬 버전이 더 높으면 (아직 저장 중이거나 방금 저장) → 무시
+          if (remoteVersion <= confirmedVersion.current && !isFirst) {
+            return;
+          }
 
-          lastSavedJSON.current = json;
+          // 원격 데이터가 더 최신 → 반영
+          confirmedVersion.current = remoteVersion;
+          localVersion.current = remoteVersion;
 
           if (data.settings) setSettings(data.settings);
           if (Array.isArray(data.beds)) setBeds(data.beds);
           saveLocalStorage({ settings: data.settings, beds: data.beds });
         } else if (isFirst) {
           // 문서가 없으면 현재 로컬 데이터를 업로드
-          doSave(settingsRef.current, bedsRef.current);
+          saveNow(settingsRef.current, bedsRef.current);
         }
         isFirst = false;
       },
+      (err) => {
+        console.error('onSnapshot error:', err);
+        setSyncStatus('error');
+      }
+    );
+
+    return () => unsubscribe();
+  }, [userId, saveNow]);
+
+  return { settings, beds, updateSettings, updateBeds, syncStatus };
+}
       (err) => {
         console.error('onSnapshot error:', err);
         setSyncStatus('error');
