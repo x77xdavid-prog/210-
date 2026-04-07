@@ -495,15 +495,16 @@ function SettingsModal({ settings, onSave, onClose }) {
 
 /* ── 컴포넌트: SyncIndicator ── */
 function SyncIndicator({ status }) {
+  if (status === 'idle' || status === 'saved') return null;
   const map = {
     saving: { cls: 'sync-saving', icon: '⟳', text: '저장 중...' },
-    saved:  { cls: 'sync-ok',     icon: '✓', text: '동기화 완료' },
     error:  { cls: 'sync-error',  icon: '✕', text: '동기화 오류' },
   };
   const cfg = map[status];
+  if (!cfg) return null;
   return (
-    <span className={`sync-indicator ${cfg ? cfg.cls : ''}`} style={{ visibility: cfg ? 'visible' : 'hidden' }}>
-      {cfg ? (<><span className={status === 'saving' ? 'spin' : ''}>{cfg.icon}</span> {cfg.text}</>) : '\u00A0'}
+    <span className={`sync-indicator ${cfg.cls}`} style={{ position: 'absolute', top: 5, left: '50%', transform: 'translateX(-50%)', zIndex: 50 }}>
+      <span className={status === 'saving' ? 'spin' : ''}>{cfg.icon}</span> {cfg.text}
     </span>
   );
 }
@@ -613,14 +614,12 @@ function App() {
   if (!isLoggedIn) return <Login onLogin={(uid) => { setUserId(uid); setIsLoggedIn(true); }} />;
 
   return (
-    <div className="max-w-7xl mx-auto p-4">
+    <div className="max-w-7xl mx-auto p-4" style={{ position: 'relative' }}>
+      <SyncIndicator status={syncStatus} />
       <header className="bg-white p-5 rounded-2xl shadow-sm flex justify-between items-center mb-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900">{settings.wardName}</h1>
-          <div className="flex items-center gap-3 mt-1">
-            <p className="text-xs text-gray-400">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b => b.status !== 'empty').length}명</p>
-            <SyncIndicator status={syncStatus} />
-          </div>
+          <p className="text-xs text-gray-400 mt-1">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b => b.status !== 'empty').length}명</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="btn btn-gray" onClick={() => setShowSettings(true)}>환경 설정</button>
