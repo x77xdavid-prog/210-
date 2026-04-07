@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>210정형외과 병동관리시스템</title>
+  <title>210정형외과병동관리시스템</title>
   
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -14,24 +14,22 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
   <style>
-    body { font-family: 'Malgun Gothic', sans-serif; background: #f8fafc; }
-    .bed-card { cursor: pointer; transition: all 0.2s; border-radius: 1rem; padding: 1.25rem; background: white; border: 2px solid #f1f5f9; }
-    .bed-card:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); border-color: #3b82f6; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
-    .modal-box { background: white; border-radius: 1.25rem; padding: 2rem; width: 100%; max-width: 400px; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Malgun Gothic', sans-serif; margin: 0; background: #f0f2f5; min-height: 100vh; }
+    .bed-card { cursor: pointer; transition: transform 0.1s ease, box-shadow 0.1s ease; }
+    .bed-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
   </style>
 </head>
 <body>
-  <div id="root">
-    <div class="flex items-center justify-center h-screen">
-      <p class="text-gray-400 animate-pulse">시스템을 불러오는 중입니다...</p>
-    </div>
-  </div>
+  <div id="root"></div>
 
   <script type="text/babel">
-    // --- 3. Firebase 초기화 (API Key 공백 제거 완료) ---
+    // --- Firebase 설정 ---
     const firebaseConfig = {
-      apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI", // 공백 제거됨
+      apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI", // 공백 제거 완료
       authDomain: "gen-lang-client-0584117357.firebaseapp.com",
       projectId: "gen-lang-client-0584117357",
       storageBucket: "gen-lang-client-0584117357.firebasestorage.app",
@@ -44,125 +42,159 @@
     }
     const db = firebase.firestore();
 
-    // --- 4. React 컴포넌트 ---
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useMemo } = React;
 
+    // --- 상수 설정 ---
     const STATUS_MAP = {
-      empty: { label: '비어 있음', color: '#94a3b8', bg: '#f8fafc' },
-      admitted: { label: '입원 중', color: '#3b82f6', bg: '#eff6ff' },
-      morning: { label: '오전 퇴원', color: '#f59e0b', bg: '#fffbeb' },
-      afternoon: { label: '오후 퇴원', color: '#f97316', bg: '#fff7ed' }
+      empty: { label: '비어 있음', color: '#94a3b8', bg: '#f8fafc', light: '#f1f5f9' },
+      admitted: { label: '입원 중', color: '#3b82f6', bg: '#eff6ff', light: '#dbeafe' },
+      morning: { label: '오전 퇴원', color: '#f59e0b', bg: '#fffbeb', light: '#fef3c7' },
+      afternoon: { label: '오후 퇴원', color: '#f97316', bg: '#fff7ed', light: '#ffedd5' },
+      surgery: { label: '수술 예정', color: '#ef4444', bg: '#fef2f2', light: '#fee2e2' }
     };
 
-    function App() {
-      const [beds, setBeds] = useState({});
-      const [selectedId, setSelectedId] = useState(null);
-      const [editData, setEditData] = useState({ name: '', status: 'empty', memo: '' });
-      
-      const bedIds = ['501', '502', '503', '504', '505', '506', '507', '508', '509'];
+    // --- 컴포넌트: BedCard ---
+    const BedCard = ({ bed, onClick }) => {
+      const config = STATUS_MAP[bed.status] || STATUS_MAP.empty;
+      return (
+        <div className="bed-card bg-white rounded-xl p-4 border-2" 
+             style={{ borderColor: bed.status === 'empty' ? '#f1f5f9' : config.color }}
+             onClick={() => onClick(bed)}>
+          <div className="flex justify-between items-center mb-3">
+            <span className="text-xl font-black text-slate-700">{bed.id}</span>
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white" style={{ backgroundColor: config.color }}>
+              {config.label}
+            </span>
+          </div>
+          <div className="h-10 flex flex-col justify-center">
+            {bed.name ? (
+              <>
+                <div className="font-bold text-slate-800 leading-tight">{bed.name} <small className="text-slate-400 font-normal">님</small></div>
+                <div className="text-[10px] text-slate-400 mt-1 truncate">{bed.memo}</div>
+              </>
+            ) : (
+              <span className="text-slate-300 italic text-sm">비어 있음</span>
+            )}
+          </div>
+        </div>
+      );
+    };
 
-      // 실시간 데이터 동기화 (전체 병상 감시)
+    // --- 메인 앱 ---
+    function App() {
+      const [beds, setBeds] = useState([]);
+      const [filter, setFilter] = useState('all');
+      const [selectedBed, setSelectedBed] = useState(null);
+      const [editData, setEditData] = useState(null);
+
+      // 1. 실시간 데이터 리스너
       useEffect(() => {
         const unsubscribe = db.collection("ward").onSnapshot((snapshot) => {
-          const newBeds = {};
+          const bedData = [];
           snapshot.forEach(doc => {
-            newBeds[doc.id] = doc.data();
+            bedData.push({ id: doc.id, ...doc.data() });
           });
-          setBeds(newBeds);
+          // 병상 번호순 정렬
+          setBeds(bedData.sort((a, b) => a.id.localeCompare(b.id)));
         });
         return () => unsubscribe();
       }, []);
 
-      const openEdit = (id) => {
-        setSelectedId(id);
-        const current = beds[id] || { name: '', status: 'empty', memo: '' };
-        setEditData({ ...current });
-      };
+      // 2. 통계 계산
+      const stats = useMemo(() => {
+        const s = { all: beds.length, empty: 0, admitted: 0, morning: 0, afternoon: 0, surgery: 0 };
+        beds.forEach(b => { if(s[b.status] !== undefined) s[b.status]++; });
+        return s;
+      }, [beds]);
 
+      // 3. 필터링된 데이터
+      const filteredBeds = beds.filter(b => filter === 'all' || b.status === filter);
+
+      // 4. 저장 로직
       const handleSave = async () => {
+        if (!selectedBed || !editData) return;
         try {
-          // { merge: true }로 다른 사용자의 수정을 덮어쓰지 않도록 보호
-          await db.collection("ward").doc(selectedId).set(editData, { merge: true });
-          setSelectedId(null);
+          await db.collection("ward").doc(selectedBed.id).set(editData, { merge: true });
+          setSelectedBed(null);
+          setEditData(null);
         } catch (e) {
-          alert("저장에 실패했습니다. 인터넷 연결을 확인하세요.");
+          alert("저장 실패!");
         }
       };
 
       return (
-        <div className="max-w-5xl mx-auto p-6 md:p-12">
-          <header className="mb-10 text-center md:text-left">
-            <h1 className="text-3xl font-black text-slate-800 tracking-tight">210 정형외과 병동관리</h1>
-            <p className="text-slate-400 mt-1">실시간 데이터 동기화 시스템</p>
-          </header>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {bedIds.map(id => {
-              const info = beds[id] || { status: 'empty', name: '' };
-              const style = STATUS_MAP[info.status] || STATUS_MAP.empty;
-              return (
-                <div key={id} className="bed-card" style={{ backgroundColor: style.bg }} onClick={() => openEdit(id)}>
-                  <div className="flex justify-between items-center mb-6">
-                    <span className="text-2xl font-black text-slate-700">{id}</span>
-                    <span className="text-[11px] font-black px-2.5 py-1 rounded-full text-white" style={{ backgroundColor: style.color }}>
-                      {style.label}
-                    </span>
-                  </div>
-                  <div className="h-12 flex items-center">
-                    {info.name ? (
-                      <span className="text-xl font-bold text-slate-800">{info.name} <small className="text-sm font-normal text-slate-400">님</small></span>
-                    ) : (
-                      <span className="text-slate-300 italic">비어 있음</span>
-                    )}
-                  </div>
-                  <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-400 truncate">
-                    {info.memo || "기록된 메모 없음"}
-                  </div>
+        <div className="max-w-5xl mx-auto p-4 md:p-8">
+          <header className="mb-8">
+            <div className="flex justify-between items-end mb-6">
+              <div>
+                <h1 className="text-2xl font-black text-slate-800">210 병동관리시스템</h1>
+                <p className="text-xs text-slate-400 font-bold mt-1 uppercase tracking-wider">Orthopedic Ward Management</p>
+              </div>
+              <div className="text-[10px] font-bold text-blue-500 bg-blue-50 px-3 py-1 rounded-full animate-pulse">
+                ● LIVE 실시간 동기화 중
+              </div>
+            </div>
+
+            {/* 통계 카드 */}
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-6">
+              {Object.entries({all: {label:'전체', color:'#64748b'}, ...STATUS_MAP}).map(([key, cfg]) => (
+                <div key={key} 
+                     className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${filter === key ? 'border-slate-800' : 'border-white bg-white'}`}
+                     onClick={() => setFilter(key)}>
+                  <div className="text-xl font-black" style={{ color: cfg.color }}>{stats[key] || 0}</div>
+                  <div className="text-[10px] text-slate-500 font-bold">{cfg.label}</div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+          </header>
+
+          {/* 병상 그리드 */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {filteredBeds.map(bed => (
+              <BedCard key={bed.id} bed={bed} onClick={(b) => {
+                setSelectedBed(b);
+                setEditData({ name: b.name || '', status: b.status || 'empty', memo: b.memo || '' });
+              }} />
+            ))}
           </div>
 
           {/* 수정 모달 */}
-          {selectedId && (
-            <div className="modal-overlay" onClick={() => setSelectedId(null)}>
-              <div className="modal-box shadow-2xl" onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-bold mb-6 text-slate-800 border-b pb-3">{selectedId}호 상세 정보</h2>
-                <div className="space-y-5">
+          {selectedBed && editData && (
+            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setSelectedBed(null)}>
+              <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-xl font-black text-slate-800">{selectedBed.id}호 정보 수정</h2>
+                  <button onClick={() => setSelectedBed(null)} className="text-slate-400">✕</button>
+                </div>
+                
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">현재 상태</label>
-                    <select 
-                      className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none transition-all"
-                      value={editData.status}
-                      onChange={e => setEditData({...editData, status: e.target.value})}
-                    >
-                      {Object.entries(STATUS_MAP).map(([val, {label}]) => (
-                        <option key={val} value={val}>{label}</option>
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">상태 변경</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {Object.entries(STATUS_MAP).map(([key, cfg]) => (
+                        <button key={key}
+                                onClick={() => setEditData({...editData, status: key})}
+                                className={`py-2 rounded-lg text-xs font-bold border-2 transition-all ${editData.status === key ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-100 text-slate-500'}`}>
+                          {cfg.label}
+                        </button>
                       ))}
-                    </select>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">환자 성함</label>
-                    <input 
-                      className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none transition-all"
-                      value={editData.name}
-                      onChange={e => setEditData({...editData, name: e.target.value})}
-                      placeholder="성함을 입력하세요"
-                    />
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">환자 성함</label>
+                    <input className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none font-bold"
+                           value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">비고 (메모)</label>
-                    <textarea 
-                      className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none h-28 resize-none transition-all"
-                      value={editData.memo}
-                      onChange={e => setEditData({...editData, memo: e.target.value})}
-                      placeholder="참고 사항을 입력하세요"
-                    />
+                    <label className="block text-[11px] font-bold text-slate-400 mb-1.5 uppercase">비고</label>
+                    <textarea className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none h-24 resize-none text-sm"
+                              value={editData.memo} onChange={e => setEditData({...editData, memo: e.target.value})} />
                   </div>
                 </div>
+
                 <div className="flex gap-3 mt-8">
-                  <button className="flex-1 bg-slate-100 text-slate-500 font-bold py-3.5 rounded-xl hover:bg-slate-200" onClick={() => setSelectedId(null)}>닫기</button>
-                  <button className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-700" onClick={handleSave}>저장하기</button>
+                  <button className="flex-1 bg-slate-100 text-slate-500 font-bold py-3.5 rounded-xl" onClick={() => setSelectedBed(null)}>취소</button>
+                  <button className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-200" onClick={handleSave}>저장하기</button>
                 </div>
               </div>
             </div>
