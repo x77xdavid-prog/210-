@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>210정형외과병동관리시스템</title>
+  <title>210정형외과 병동관리시스템</title>
   
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -14,20 +14,24 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 
   <style>
-    body { font-family: 'Malgun Gothic', sans-serif; background: #f0f2f5; margin: 0; }
-    .bed-card { cursor: pointer; transition: all 0.2s; border: 2px solid #e5e7eb; border-radius: 12px; padding: 16px; background: white; }
-    .bed-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-    .modal-box { background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+    body { font-family: 'Malgun Gothic', sans-serif; background: #f8fafc; }
+    .bed-card { cursor: pointer; transition: all 0.2s; border-radius: 1rem; padding: 1.25rem; background: white; border: 2px solid #f1f5f9; }
+    .bed-card:hover { transform: translateY(-4px); box-shadow: 0 10px 20px rgba(0,0,0,0.05); border-color: #3b82f6; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
+    .modal-box { background: white; border-radius: 1.25rem; padding: 2rem; width: 100%; max-width: 400px; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div class="flex items-center justify-center h-screen">
+      <p class="text-gray-400 animate-pulse">시스템을 불러오는 중입니다...</p>
+    </div>
+  </div>
 
   <script type="text/babel">
-    // --- 3. Firebase 초기화 ---
+    // --- 3. Firebase 초기화 (API Key 공백 제거 완료) ---
     const firebaseConfig = {
-      apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI",
+      apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI", // 공백 제거됨
       authDomain: "gen-lang-client-0584117357.firebaseapp.com",
       projectId: "gen-lang-client-0584117357",
       storageBucket: "gen-lang-client-0584117357.firebasestorage.app",
@@ -35,7 +39,6 @@
       appId: "1:117986366738:web:08d7b55ac07479d9cf4fcb"
     };
 
-    // 앱이 중복 초기화되지 않도록 체크
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -45,10 +48,10 @@
     const { useState, useEffect } = React;
 
     const STATUS_MAP = {
-      empty: { label: '비어 있음', color: '#9ca3af', bg: '#f9fafb' },
+      empty: { label: '비어 있음', color: '#94a3b8', bg: '#f8fafc' },
       admitted: { label: '입원 중', color: '#3b82f6', bg: '#eff6ff' },
-      morning_discharge: { label: '오전 퇴원 예정', color: '#f59e0b', bg: '#fffbeb' },
-      afternoon_discharge: { label: '오후 퇴원 예정', color: '#f97316', bg: '#fff7ed' }
+      morning: { label: '오전 퇴원', color: '#f59e0b', bg: '#fffbeb' },
+      afternoon: { label: '오후 퇴원', color: '#f97316', bg: '#fff7ed' }
     };
 
     function App() {
@@ -58,68 +61,62 @@
       
       const bedIds = ['501', '502', '503', '504', '505', '506', '507', '508', '509'];
 
-      // 데이터 실시간 감시 (onSnapshot)
+      // 실시간 데이터 동기화 (전체 병상 감시)
       useEffect(() => {
-        const unsubs = bedIds.map(id => 
-          db.collection("ward").doc(id).onSnapshot((doc) => {
-            if (doc.exists) {
-              setBeds(prev => ({ ...prev, [id]: doc.data() }));
-            }
-          })
-        );
-        return () => unsubs.forEach(unsub => unsub());
+        const unsubscribe = db.collection("ward").onSnapshot((snapshot) => {
+          const newBeds = {};
+          snapshot.forEach(doc => {
+            newBeds[doc.id] = doc.data();
+          });
+          setBeds(newBeds);
+        });
+        return () => unsubscribe();
       }, []);
 
-      // 수정 창 열기
       const openEdit = (id) => {
         setSelectedId(id);
         const current = beds[id] || { name: '', status: 'empty', memo: '' };
         setEditData({ ...current });
       };
 
-      // 서버에 저장 (병합 모드)
       const handleSave = async () => {
         try {
+          // { merge: true }로 다른 사용자의 수정을 덮어쓰지 않도록 보호
           await db.collection("ward").doc(selectedId).set(editData, { merge: true });
           setSelectedId(null);
         } catch (e) {
-          alert("저장 실패!");
+          alert("저장에 실패했습니다. 인터넷 연결을 확인하세요.");
         }
       };
 
       return (
-        <div className="max-w-4xl mx-auto p-4 sm:p-8">
-          <header className="mb-8 flex justify-between items-end">
-            <div>
-              <h1 className="text-3xl font-black text-slate-800">210 병동관리</h1>
-              <p className="text-slate-500 font-medium">실시간 통합 관리 시스템</p>
-            </div>
-            <div className="text-right text-xs text-slate-400">
-              최종 업데이트: {new Date().toLocaleTimeString()}
-            </div>
+        <div className="max-w-5xl mx-auto p-6 md:p-12">
+          <header className="mb-10 text-center md:text-left">
+            <h1 className="text-3xl font-black text-slate-800 tracking-tight">210 정형외과 병동관리</h1>
+            <p className="text-slate-400 mt-1">실시간 데이터 동기화 시스템</p>
           </header>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {bedIds.map(id => {
               const info = beds[id] || { status: 'empty', name: '' };
               const style = STATUS_MAP[info.status] || STATUS_MAP.empty;
               return (
                 <div key={id} className="bed-card" style={{ backgroundColor: style.bg }} onClick={() => openEdit(id)}>
-                  <div className="flex justify-between items-start mb-4">
-                    <span className="text-2xl font-bold text-slate-700">{id}</span>
-                    <span className="text-[10px] font-bold px-2 py-1 rounded text-white" style={{ backgroundColor: style.color }}>
+                  <div className="flex justify-between items-center mb-6">
+                    <span className="text-2xl font-black text-slate-700">{id}</span>
+                    <span className="text-[11px] font-black px-2.5 py-1 rounded-full text-white" style={{ backgroundColor: style.color }}>
                       {style.label}
                     </span>
                   </div>
-                  <div className="min-h-[3rem]">
+                  <div className="h-12 flex items-center">
                     {info.name ? (
-                      <div className="text-lg font-bold text-slate-800">{info.name} <span className="text-sm font-normal text-slate-500">님</span></div>
+                      <span className="text-xl font-bold text-slate-800">{info.name} <small className="text-sm font-normal text-slate-400">님</small></span>
                     ) : (
-                      <div className="text-slate-400 italic">비어 있음</div>
+                      <span className="text-slate-300 italic">비어 있음</span>
                     )}
                   </div>
-                  <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 truncate">
-                    {info.memo || "특이사항 없음"}
+                  <div className="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-400 truncate">
+                    {info.memo || "기록된 메모 없음"}
                   </div>
                 </div>
               );
@@ -129,16 +126,53 @@
           {/* 수정 모달 */}
           {selectedId && (
             <div className="modal-overlay" onClick={() => setSelectedId(null)}>
-              <div className="modal-box" onClick={e => e.stopPropagation()}>
-                <h2 className="text-xl font-bold mb-6 text-slate-800">{selectedId}호 정보 수정</h2>
-                <div className="space-y-4">
+              <div className="modal-box shadow-2xl" onClick={e => e.stopPropagation()}>
+                <h2 className="text-xl font-bold mb-6 text-slate-800 border-b pb-3">{selectedId}호 상세 정보</h2>
+                <div className="space-y-5">
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 mb-1">환자 상태</label>
+                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">현재 상태</label>
                     <select 
-                      className="w-full border-2 border-slate-100 p-3 rounded-lg focus:border-blue-500 outline-none"
+                      className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none transition-all"
                       value={editData.status}
                       onChange={e => setEditData({...editData, status: e.target.value})}
                     >
                       {Object.entries(STATUS_MAP).map(([val, {label}]) => (
                         <option key={val} value={val}>{label}</option>
                       ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">환자 성함</label>
+                    <input 
+                      className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none transition-all"
+                      value={editData.name}
+                      onChange={e => setEditData({...editData, name: e.target.value})}
+                      placeholder="성함을 입력하세요"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-black text-slate-400 uppercase mb-1.5">비고 (메모)</label>
+                    <textarea 
+                      className="w-full border-2 border-slate-100 p-3 rounded-xl focus:border-blue-500 outline-none h-28 resize-none transition-all"
+                      value={editData.memo}
+                      onChange={e => setEditData({...editData, memo: e.target.value})}
+                      placeholder="참고 사항을 입력하세요"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-8">
+                  <button className="flex-1 bg-slate-100 text-slate-500 font-bold py-3.5 rounded-xl hover:bg-slate-200" onClick={() => setSelectedId(null)}>닫기</button>
+                  <button className="flex-1 bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-100 hover:bg-blue-700" onClick={handleSave}>저장하기</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
