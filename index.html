@@ -105,53 +105,60 @@ function signUpUser(e,p){ return auth.createUserWithEmailAndPassword(e,p).then(r
 function signInUser(e,p){ return auth.signInWithEmailAndPassword(e,p).then(r=>r.user.uid); }
 function signOutUser(){ return auth.signOut(); }
 
-/* ══════════════════════════════════════════════
-   useFirestoreSync v4 — 요금 절감 핵심 수정
-   [1] Firebase 초기화 중복 제거 (파일 하단 script 삭제)
-   [2] 디바운스 1000ms → 연속 수정 시 마지막 1번만 전송
-   [3] isSaving 플래그 → onSnapshot 루프 완전 차단
-   [4] 오프라인 복귀 시 pendingData 재전송
-   ══════════════════════════════════════════════ */
-function useFirestoreSync(userId){
+function useFirestorePolling(userId){
   const [settings,setSettings]=useState(()=>{ const s=loadLS(); return {...DEFAULT_SETTINGS,...(s?.settings||{})}; });
   const [beds,setBeds]=useState(()=>{ const s=loadLS(); return s?.beds?.length?s.beds:makeBeds(DEFAULT_SETTINGS.totalBeds,DEFAULT_SETTINGS.startBedNumber,DEFAULT_SETTINGS.bedPrefix); });
   const [syncStatus,setSyncStatus]=useState('idle');
-
-  const settingsRef   = useRef(settings);
-  const bedsRef       = useRef(beds);
-  const lastSaveTime  = useRef(0);       // 마지막 저장 완료 시각 (ms)
-  const debounceTimer = useRef(null);    // 디바운스 타이머
-  const pendingData   = useRef(null);    // 오프라인 미전송 데이터
-
+  const settingsRef  = useRef(settings);
+  const bedsRef      = useRef(beds);
+  const debounceTimer= useRef(null);
+  const isMounted    = useRef(true);
+  const lastSaveTime = useRef(0);
   settingsRef.current=settings;
   bedsRef.current=beds;
 
-  /* 실제 Firestore 저장 */
-  const flushToFirestore = useCallback(async(s,b)=>{
+  const fetchFromServer = useCallback(async()=>{
+    if(!userId||!navigator.onLine) return;
+    try {
+      const doc = await db.collection('wardData').doc(userId).get();
+      if(!isMounted.current) return;
+      if(doc.exists && doc.data()?.beds){
+        const d = doc.data();
+        const serverTs = d.updatedAt?.toMillis?.() || 0;
+        if(serverTs > lastSaveTime.current){
+          if(d.settings) setSettings(d.settings);
+          if(Array.isArray(d.beds)) setBeds(d.beds);
+          saveLS({settings:d.settings,beds:d.beds});
+        }
+      }
+    } catch(err){ console.warn('Poll failed:',err.message); }
+  },[userId]);
+
+  const flushSave = useCallback(async(s,b)=>{
     if(!userId) return;
+    if(!navigator.onLine){ setSyncStatus('offline'); return; }
     setSyncStatus('saving');
     try {
       await db.collection('wardData').doc(userId).set({
         settings:s, beds:b,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-      lastSaveTime.current = Date.now(); // 저장 완료 시각 기록
-      pendingData.current=null;
+      if(!isMounted.current) return;
+      lastSaveTime.current = Date.now();
       setSyncStatus('saved');
-      setTimeout(()=>setSyncStatus('idle'),2000);
+      setTimeout(()=>{ if(isMounted.current) setSyncStatus('idle'); },2000);
     } catch(err){
-      console.error('Firestore save failed:',err);
-      pendingData.current={settings:s,beds:b};
+      if(!isMounted.current) return;
       setSyncStatus('error');
     }
   },[userId]);
 
-  /* 디바운스 저장 — 1초 내 연속 수정은 마지막 것만 전송 */
   const saveNow = useCallback((s,b)=>{
     saveLS({settings:s,beds:b});
+    setSyncStatus('saving');
     if(debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current=setTimeout(()=>flushToFirestore(s,b),1000);
-  },[flushToFirestore]);
+    debounceTimer.current = setTimeout(()=>flushSave(s,b), 1500);
+  },[flushSave]);
 
   const updateSettings = useCallback((ns)=>{ setSettings(ns); saveNow(ns,bedsRef.current); },[saveNow]);
   const updateBeds = useCallback((uov)=>{
@@ -162,40 +169,27 @@ function useFirestoreSync(userId){
     });
   },[saveNow]);
 
-  /* onSnapshot — 내가 저장한 직후 3초 이내 수신은 무시 (루프 차단) */
   useEffect(()=>{
+    isMounted.current=true;
     if(!userId) return;
-    let isFirst=true;
-    const unsub=db.collection('wardData').doc(userId).onSnapshot(
-      (doc)=>{
-        if(doc.metadata.hasPendingWrites) return;
-        // 내가 저장한 직후 3초 이내면 무시 (무한루프 방지, 단 영구 차단 아님)
-        if(Date.now() - lastSaveTime.current < 3000) return;
-        if(doc.exists&&doc.data()?.beds){
-          const d=doc.data();
-          if(d.settings) setSettings(d.settings);
-          if(Array.isArray(d.beds)) setBeds(d.beds);
-          saveLS({settings:d.settings,beds:d.beds});
-        } else if(isFirst){
-          flushToFirestore(settingsRef.current,bedsRef.current);
-        }
-        isFirst=false;
-      },
-      (err)=>{ console.error('onSnapshot error:',err); setSyncStatus('error'); }
-    );
-    return ()=>{ unsub(); if(debounceTimer.current) clearTimeout(debounceTimer.current); };
-  },[userId,flushToFirestore]);
-
-  /* [수정3] 오프라인 → 온라인 복귀 시 미전송 데이터 재업로드 */
-  useEffect(()=>{
-    const handleOnline=()=>{ if(pendingData.current&&userId) flushToFirestore(pendingData.current.settings,pendingData.current.beds); };
-    window.addEventListener('online',handleOnline);
-    return ()=>window.removeEventListener('online',handleOnline);
-  },[userId,flushToFirestore]);
+    fetchFromServer();
+    const pollTimer = setInterval(fetchFromServer, 30000);
+    const onVisibility=()=>{ if(document.visibilityState==='visible') fetchFromServer(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    const onOnline=()=>fetchFromServer();
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline',()=>setSyncStatus('offline'));
+    return ()=>{
+      isMounted.current=false;
+      clearInterval(pollTimer);
+      if(debounceTimer.current) clearTimeout(debounceTimer.current);
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('online', onOnline);
+    };
+  },[userId, fetchFromServer]);
 
   return {settings,beds,updateSettings,updateBeds,syncStatus};
 }
-
 /* ── BedCard ── */
 function BedCard({bed,settings,onClick,onQuickDischarge}){
   const cfg=STATUS[bed.status]||STATUS.empty;
@@ -324,19 +318,21 @@ function SettingsModal({settings,onSave,onClose}){
   );
 }
 
-/* ── SyncIndicator (saved 상태 추가) ── */
+/* ── SyncBar ── */
 function SyncIndicator({status}){
   const map={
-    saving:{cls:'sync-saving',icon:'⟳',text:'저장 중...'},
-    saved: {cls:'sync-ok',   icon:'✓',text:'저장됨'},
-    error: {cls:'sync-error',icon:'✕',text:'동기화 오류'},
+    saving:{cls:'sync-saving',icon:'⟳',text:'저장 중...',spin:true},
+    saved: {cls:'sync-ok',   icon:'✓',text:'저장됨',spin:false},
+    error: {cls:'sync-error',icon:'✕',text:'저장 실패',spin:false},
+    offline:{cls:'sync-offline',icon:'⊘',text:'오프라인',spin:false},
   };
   const cfg=map[status];
   if(!cfg) return null;
   return(
-    <span className={`sync-indicator ${cfg.cls}`} style={{position:'absolute',top:5,left:'50%',transform:'translateX(-50%)',zIndex:50}}>
-      <span className={status==='saving'?'spin':''}>{cfg.icon}</span> {cfg.text}
-    </span>
+    <div style={{position:'fixed',top:0,left:0,right:0,zIndex:999,display:'flex',alignItems:'center',justifyContent:'center',padding:'4px',fontSize:'11px',fontWeight:600}}
+      className={cfg.cls}>
+      <span className={cfg.spin?'spin':''}>{cfg.icon}</span>&nbsp;{cfg.text}
+    </div>
   );
 }
 
@@ -396,7 +392,7 @@ function App(){
     return()=>unsub();
   },[]);
 
-  const {settings,beds,updateSettings,updateBeds,syncStatus}=useFirestoreSync(userId);
+  const {settings,beds,updateSettings,updateBeds,syncStatus}=useFirestorePolling(userId);
 
   useEffect(()=>{ const t=setInterval(()=>setNowDisplay(getNowDisplay()),60000); return()=>clearInterval(t); },[]);
 
@@ -412,7 +408,7 @@ function App(){
       <header className="bg-white p-5 rounded-2xl shadow-sm flex justify-between items-center mb-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900">{settings.wardName}</h1>
-          <p className="text-xs text-gray-400 mt-1">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b=>b.status!=='empty').length}명</p>
+          <p className="text-xs text-gray-400 mt-1">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b=>b.status!=='empty').length}명 • 30초 자동 동기화</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="btn btn-gray" onClick={()=>setShowSettings(true)}>환경 설정</button>
