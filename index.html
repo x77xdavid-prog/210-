@@ -194,6 +194,104 @@ function useFirestorePolling(userId){
 
   return {settings,beds,updateSettings,updateBeds,syncStatus};
 }
+/* ── 알림 유틸리티 ── */
+function calcDday(dateStr){
+  if(!dateStr) return null;
+  const target=new Date(dateStr+'T00:00:00');
+  const today=new Date(); today.setHours(0,0,0,0);
+  return Math.round((target-today)/86400000);
+}
+function calcStayDays(admittedDate){
+  if(!admittedDate) return 0;
+  const start=new Date(admittedDate+'T00:00:00');
+  const today=new Date(); today.setHours(0,0,0,0);
+  return Math.round((today-start)/86400000);
+}
+
+/* ── 알림 배너 컴포넌트 ── */
+function AlertBanners({beds, dismissed, onDismiss}){
+  // 퇴원 D-1 환자 (내일 퇴원)
+  const tomorrowDischarge = beds.filter(b=>{
+    if(!b.patient?.dischargeDate) return false;
+    return calcDday(b.patient.dischargeDate)===1;
+  });
+  // 장기입원 7일 초과
+  const longStay = beds.filter(b=>{
+    if(b.status==='empty'||!b.patient?.admittedDate) return false;
+    return calcStayDays(b.patient.admittedDate)>=7;
+  });
+  // 오전 퇴원 시간 초과
+  const overdueAM = beds.filter(b=>b.status==='morning_discharge'&&isOverdue(b.status,{morningCutoff:'12:00',afternoonCutoff:'18:00'}));
+
+  const banners = [];
+
+  if(tomorrowDischarge.length>0 && !dismissed.includes('discharge')){
+    banners.push(
+      <div key="discharge" style={{background:'#fff1f2',border:'0.5px solid #fecdd3',borderRadius:12,padding:'14px 16px',marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#881337',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:'#f43f5e',display:'inline-block',flexShrink:0}}/>
+          내일 퇴원 예정 환자 {tomorrowDischarge.length}명
+        </div>
+        {tomorrowDischarge.map(b=>(
+          <div key={b.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'0.5px solid rgba(0,0,0,0.06)'}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'#881337'}}>{b.bedNumber}호 {b.patient.name||'이름 없음'}</div>
+              <div style={{fontSize:11,color:'#be123c',marginTop:1}}>{b.patient.diagnosis||'진단명 없음'} • 퇴원일 {b.patient.dischargeDate}</div>
+            </div>
+            <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:99,background:'#fecdd3',color:'#881337',whiteSpace:'nowrap'}}>D-1</span>
+          </div>
+        ))}
+        <button onClick={()=>onDismiss('discharge')} style={{marginTop:8,fontSize:11,color:'#6b7280',background:'none',border:'0.5px solid #e5e7eb',borderRadius:6,padding:'3px 10px',cursor:'pointer'}}>확인 (닫기)</button>
+      </div>
+    );
+  }
+
+  if(longStay.length>0 && !dismissed.includes('longstay')){
+    banners.push(
+      <div key="longstay" style={{background:'#fffbeb',border:'0.5px solid #fde68a',borderRadius:12,padding:'14px 16px',marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#92400e',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:'#f59e0b',display:'inline-block',flexShrink:0}}/>
+          장기입원 7일 초과 환자 {longStay.length}명
+        </div>
+        {longStay.map(b=>(
+          <div key={b.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'0.5px solid rgba(0,0,0,0.06)'}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'#92400e'}}>{b.bedNumber}호 {b.patient.name||'이름 없음'}</div>
+              <div style={{fontSize:11,color:'#b45309',marginTop:1}}>입원일 {b.patient.admittedDate} • {calcStayDays(b.patient.admittedDate)}일째 입원 중</div>
+            </div>
+            <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:99,background:'#fde68a',color:'#92400e',whiteSpace:'nowrap'}}>{calcStayDays(b.patient.admittedDate)}일 경과</span>
+          </div>
+        ))}
+        <button onClick={()=>onDismiss('longstay')} style={{marginTop:8,fontSize:11,color:'#6b7280',background:'none',border:'0.5px solid #e5e7eb',borderRadius:6,padding:'3px 10px',cursor:'pointer'}}>확인 (닫기)</button>
+      </div>
+    );
+  }
+
+  if(overdueAM.length>0 && !dismissed.includes('overdueAM')){
+    banners.push(
+      <div key="overdueAM" style={{background:'#eff6ff',border:'0.5px solid #bfdbfe',borderRadius:12,padding:'14px 16px',marginBottom:10}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#1e40af',marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+          <span style={{width:8,height:8,borderRadius:'50%',background:'#3b82f6',display:'inline-block',flexShrink:0}}/>
+          오전 퇴원 시간 초과 {overdueAM.length}명
+        </div>
+        {overdueAM.map(b=>(
+          <div key={b.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 0',borderBottom:'0.5px solid rgba(0,0,0,0.06)'}}>
+            <div>
+              <div style={{fontSize:13,fontWeight:600,color:'#1e40af'}}>{b.bedNumber}호 {b.patient.name||'이름 없음'}</div>
+              <div style={{fontSize:11,color:'#1d4ed8',marginTop:1}}>오전 퇴원 예정 • 12:00 초과</div>
+            </div>
+            <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:99,background:'#bfdbfe',color:'#1e40af',whiteSpace:'nowrap'}}>시간 초과</span>
+          </div>
+        ))}
+        <button onClick={()=>onDismiss('overdueAM')} style={{marginTop:8,fontSize:11,color:'#6b7280',background:'none',border:'0.5px solid #e5e7eb',borderRadius:6,padding:'3px 10px',cursor:'pointer'}}>확인 (닫기)</button>
+      </div>
+    );
+  }
+
+  if(banners.length===0) return null;
+  return <div style={{marginBottom:8}}>{banners}</div>;
+}
+
 /* ── BedCard ── */
 function BedCard({bed,settings,onClick,onQuickDischarge}){
   const cfg=STATUS[bed.status]||STATUS.empty;
@@ -206,7 +304,11 @@ function BedCard({bed,settings,onClick,onQuickDischarge}){
       onClick={()=>onClick(bed)}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:4,marginBottom:7}}>
         <span style={{fontWeight:800,fontSize:17,color:'#111827',letterSpacing:'-0.5px'}}>{bed.bedNumber}호</span>
-        <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,whiteSpace:'nowrap',background:cfg.badgeBg,color:cfg.badgeText}}>{cfg.label}</span>
+        <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
+          {calcDday(bed.patient?.dischargeDate)===1&&<span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:99,background:'#fecdd3',color:'#881337'}}>D-1</span>}
+          {calcStayDays(bed.patient?.admittedDate)>=7&&bed.status!=='empty'&&<span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:99,background:'#fde68a',color:'#92400e'}}>장기</span>}
+          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,whiteSpace:'nowrap',background:cfg.badgeBg,color:cfg.badgeText}}>{cfg.label}</span>
+        </div>
       </div>
       {hasPatient?(
         <div>
@@ -383,6 +485,8 @@ function App(){
   const [userId,setUserId]=useState(null);
   const [isCheckingAuth,setIsCheckingAuth]=useState(true);
   const [filter,setFilter]=useState('all');
+  const [dismissed,setDismissed]=useState([]);
+  const handleDismiss=(key)=>setDismissed(prev=>[...prev,key]);
   const [selectedBed,setSelectedBed]=useState(null);
   const [showSettings,setShowSettings]=useState(false);
   const [nowDisplay,setNowDisplay]=useState(getNowDisplay());
@@ -435,6 +539,7 @@ function App(){
         ))}
       </div>
 
+      <AlertBanners beds={beds} dismissed={dismissed} onDismiss={handleDismiss}/>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
         {filteredBeds.map(bed=>(
           <BedCard key={bed.id} bed={bed} settings={settings} onClick={setSelectedBed}
