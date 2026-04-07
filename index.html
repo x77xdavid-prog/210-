@@ -10,22 +10,22 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore-compat.js"></script>
-  
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
   <style>
-    body { font-family: 'Malgun Gothic', sans-serif; background: #f0f2f5; }
-    .bed-card { cursor: pointer; transition: transform 0.15s ease; border: 2px solid #e5e7eb; border-radius: 12px; padding: 15px; background: white; }
-    .bed-card:hover { transform: translateY(-3px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-    .modal-box { background: white; border-radius: 15px; padding: 25px; width: 450px; max-width: 90%; }
+    body { font-family: 'Malgun Gothic', sans-serif; background: #f0f2f5; margin: 0; }
+    .bed-card { cursor: pointer; transition: all 0.2s; border: 2px solid #e5e7eb; border-radius: 12px; padding: 16px; background: white; }
+    .bed-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+    .modal-box { background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
   </style>
 </head>
 <body>
   <div id="root"></div>
 
   <script type="text/babel">
-    // --- Firebase 설정 및 초기화 ---
+    // --- 3. Firebase 초기화 ---
     const firebaseConfig = {
       apiKey: "AIzaSyDNskn4Kmkha07oGXCEXVhhNd9MvG0gcPI",
       authDomain: "gen-lang-client-0584117357.firebaseapp.com",
@@ -35,12 +35,13 @@
       appId: "1:117986366738:web:08d7b55ac07479d9cf4fcb"
     };
 
+    // 앱이 중복 초기화되지 않도록 체크
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
     const db = firebase.firestore();
 
-    // --- React 앱 시작 ---
+    // --- 4. React 컴포넌트 ---
     const { useState, useEffect } = React;
 
     const STATUS_MAP = {
@@ -53,106 +54,91 @@
     function App() {
       const [beds, setBeds] = useState({});
       const [selectedId, setSelectedId] = useState(null);
-      const [editingData, setEditingData] = useState(null);
+      const [editData, setEditData] = useState({ name: '', status: 'empty', memo: '' });
       
       const bedIds = ['501', '502', '503', '504', '505', '506', '507', '508', '509'];
 
-      // 데이터 실시간 불러오기
+      // 데이터 실시간 감시 (onSnapshot)
       useEffect(() => {
         const unsubs = bedIds.map(id => 
-          db.collection("ward").doc(id).onSnapshot((snap) => {
-            if (snap.exists) {
-              setBeds(prev => ({ ...prev, [id]: snap.data() }));
+          db.collection("ward").doc(id).onSnapshot((doc) => {
+            if (doc.exists) {
+              setBeds(prev => ({ ...prev, [id]: doc.data() }));
             }
           })
         );
-        return () => unsubs.forEach(fn => fn());
+        return () => unsubs.forEach(unsub => unsub());
       }, []);
 
-      // 모달창 열기
-      const openModal = (id) => {
+      // 수정 창 열기
+      const openEdit = (id) => {
         setSelectedId(id);
-        const currentData = beds[id] || { status: 'empty', name: '', memo: '' };
-        setEditingData({ ...currentData });
+        const current = beds[id] || { name: '', status: 'empty', memo: '' };
+        setEditData({ ...current });
       };
 
-      // 데이터 저장 (덮어쓰기 방지 적용)
-      const saveBed = async () => {
-        if (!selectedId || !editingData) return;
+      // 서버에 저장 (병합 모드)
+      const handleSave = async () => {
         try {
-          await db.collection("ward").doc(selectedId).set(editingData, { merge: true });
+          await db.collection("ward").doc(selectedId).set(editData, { merge: true });
           setSelectedId(null);
-          setEditingData(null);
-        } catch (error) {
-          console.error("저장 오류:", error);
-          alert("저장에 실패했습니다.");
+        } catch (e) {
+          alert("저장 실패!");
         }
       };
 
       return (
-        <div className="max-w-6xl mx-auto p-6">
-          <h1 className="text-2xl font-black mb-6">210정형외과 병동관리시스템</h1>
+        <div className="max-w-4xl mx-auto p-4 sm:p-8">
+          <header className="mb-8 flex justify-between items-end">
+            <div>
+              <h1 className="text-3xl font-black text-slate-800">210 병동관리</h1>
+              <p className="text-slate-500 font-medium">실시간 통합 관리 시스템</p>
+            </div>
+            <div className="text-right text-xs text-slate-400">
+              최종 업데이트: {new Date().toLocaleTimeString()}
+            </div>
+          </header>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {bedIds.map(id => {
-              const data = beds[id] || { status: 'empty', name: '' };
-              const cfg = STATUS_MAP[data.status] || STATUS_MAP.empty;
+              const info = beds[id] || { status: 'empty', name: '' };
+              const style = STATUS_MAP[info.status] || STATUS_MAP.empty;
               return (
-                <div key={id} className="bed-card" style={{ background: cfg.bg }} onClick={() => openModal(id)}>
-                  <div className="flex justify-between mb-2">
-                    <span className="font-bold text-lg">{id}호</span>
-                    <span className="text-xs px-2 py-1 rounded-full text-white" style={{ background: cfg.color }}>{cfg.label}</span>
+                <div key={id} className="bed-card" style={{ backgroundColor: style.bg }} onClick={() => openEdit(id)}>
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="text-2xl font-bold text-slate-700">{id}</span>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded text-white" style={{ backgroundColor: style.color }}>
+                      {style.label}
+                    </span>
                   </div>
-                  <div className="text-gray-700">{data.name ? <strong>{data.name} 님</strong> : '빈 병상'}</div>
-                  <div className="text-xs text-gray-400 mt-2">{data.memo || ''}</div>
+                  <div className="min-h-[3rem]">
+                    {info.name ? (
+                      <div className="text-lg font-bold text-slate-800">{info.name} <span className="text-sm font-normal text-slate-500">님</span></div>
+                    ) : (
+                      <div className="text-slate-400 italic">비어 있음</div>
+                    )}
+                  </div>
+                  <div className="mt-4 pt-3 border-t border-slate-100 text-xs text-slate-500 truncate">
+                    {info.memo || "특이사항 없음"}
+                  </div>
                 </div>
               );
             })}
           </div>
 
-          {/* 모달창 UI */}
-          {selectedId && editingData && (
-            <div className="modal-overlay" onClick={(e) => e.target.className.includes('modal-overlay') && setSelectedId(null)}>
-              <div className="modal-box">
-                <h2 className="text-xl font-bold mb-4">{selectedId}호 정보 수정</h2>
+          {/* 수정 모달 */}
+          {selectedId && (
+            <div className="modal-overlay" onClick={() => setSelectedId(null)}>
+              <div className="modal-box" onClick={e => e.stopPropagation()}>
+                <h2 className="text-xl font-bold mb-6 text-slate-800">{selectedId}호 정보 수정</h2>
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-bold mb-1">상태</label>
-                    <select className="w-full border p-2 rounded" 
-                      value={editingData.status || 'empty'} 
-                      onChange={e => setEditingData({...editingData, status: e.target.value})}>
-                      {Object.entries(STATUS_MAP).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-1">환자명</label>
-                    <input className="w-full border p-2 rounded" 
-                      value={editingData.name || ''} 
-                      placeholder="이름을 입력하세요"
-                      onChange={e => setEditingData({...editingData, name: e.target.value})} />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold mb-1">메모</label>
-                    <textarea className="w-full border p-2 rounded" 
-                      value={editingData.memo || ''} 
-                      rows="3"
-                      placeholder="특이사항을 입력하세요"
-                      onChange={e => setEditingData({...editingData, memo: e.target.value})} />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2 mt-6">
-                  <button className="bg-gray-200 px-4 py-2 rounded font-bold" onClick={() => { setSelectedId(null); setEditingData(null); }}>취소</button>
-                  <button className="bg-blue-500 text-white px-4 py-2 rounded font-bold" onClick={saveBed}>저장하기</button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
-</body>
-</html>
+                    <label className="block text-xs font-bold text-slate-500 mb-1">환자 상태</label>
+                    <select 
+                      className="w-full border-2 border-slate-100 p-3 rounded-lg focus:border-blue-500 outline-none"
+                      value={editData.status}
+                      onChange={e => setEditData({...editData, status: e.target.value})}
+                    >
+                      {Object.entries(STATUS_MAP).map(([val, {label}]) => (
+                        <option key={val} value={val}>{label}</option>
+                      ))}
