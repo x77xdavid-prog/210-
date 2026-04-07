@@ -253,12 +253,13 @@ function useFirestoreSync(userId) {
   const doSave = useCallback(async (s, b) => {
     if (!userId) return;
     const json = JSON.stringify({ settings: s, beds: b });
-    // 마지막으로 저장/수신한 것과 동일하면 스킵
     if (json === lastSavedJSON.current) {
       setSyncStatus('idle');
       pendingSave.current = false;
       return;
     }
+    // 저장 전에 lastSavedJSON을 미리 업데이트 → onSnapshot이 같은 데이터로 판단하여 무시
+    lastSavedJSON.current = json;
     setSyncStatus('saving');
     try {
       await db.collection('wardData').doc(userId).set({
@@ -266,10 +267,8 @@ function useFirestoreSync(userId) {
         beds: b,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
-      lastSavedJSON.current = json;
       pendingSave.current = false;
-      setSyncStatus('saved');
-      setTimeout(() => setSyncStatus(prev => prev === 'saved' ? 'idle' : prev), 3000);
+      setSyncStatus('idle');
     } catch (err) {
       console.error('Firestore save failed:', err);
       pendingSave.current = false;
@@ -280,9 +279,10 @@ function useFirestoreSync(userId) {
   // 디바운스 저장 스케줄러
   const scheduleSave = useCallback((s, b) => {
     saveLocalStorage({ settings: s, beds: b });
+    // 즉시 lastSavedJSON 업데이트 → onSnapshot이 진행 중인 변경을 덮어쓰지 않도록
+    lastSavedJSON.current = JSON.stringify({ settings: s, beds: b });
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     pendingSave.current = true;
-    setSyncStatus('saving');
     saveTimerRef.current = setTimeout(() => doSave(s, b), 800);
   }, [doSave]);
 
@@ -310,6 +310,9 @@ function useFirestoreSync(userId) {
         // 로컬에서 방금 쓴 pending write는 무시
         if (doc.metadata.hasPendingWrites) return;
 
+        // 로컬 저장이 진행 중이면 원격 데이터 무시 (로컬 변경이 우선)
+        if (pendingSave.current) return;
+
         if (doc.exists && doc.data()?.beds) {
           const data = doc.data();
           const json = JSON.stringify({ settings: data.settings, beds: data.beds });
@@ -319,18 +322,9 @@ function useFirestoreSync(userId) {
 
           lastSavedJSON.current = json;
 
-          // 진행 중인 저장 취소 (원격 데이터가 최신)
-          if (saveTimerRef.current) {
-            clearTimeout(saveTimerRef.current);
-            pendingSave.current = false;
-          }
-
           if (data.settings) setSettings(data.settings);
           if (Array.isArray(data.beds)) setBeds(data.beds);
           saveLocalStorage({ settings: data.settings, beds: data.beds });
-
-          setSyncStatus('saved');
-          setTimeout(() => setSyncStatus(prev => prev === 'saved' ? 'idle' : prev), 2000);
         } else if (isFirst) {
           // 문서가 없으면 현재 로컬 데이터를 업로드
           doSave(settingsRef.current, bedsRef.current);
