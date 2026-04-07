@@ -66,6 +66,8 @@ const FIREBASE_CONFIG = {
 if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
 const auth = firebase.auth();
 const db   = firebase.firestore();
+/* 자동 로그인 영구 유지 — 브라우저 닫아도 로그인 상태 보존 */
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(e=>console.warn(e));
 
 /* ── 유틸리티 ── */
 function parseTime(str){ const [h=0,m=0]=(str||'').split(':').map(Number); return h*60+m; }
@@ -149,6 +151,8 @@ function useFirestorePolling(userId){
       setTimeout(()=>{ if(isMounted.current) setSyncStatus('idle'); },2000);
     } catch(err){
       if(!isMounted.current) return;
+      console.warn('Save error:', err.code, err.message);
+      // Spark 한도 초과 시 로컬에는 이미 저장됨 — 데이터 손실 없음
       setSyncStatus('error');
     }
   },[userId]);
@@ -408,11 +412,11 @@ function App(){
       <header className="bg-white p-5 rounded-2xl shadow-sm flex justify-between items-center mb-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900">{settings.wardName}</h1>
-          <p className="text-xs text-gray-400 mt-1">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b=>b.status!=='empty').length}명 • 30초 자동 동기화</p>
+          <p className="text-xs text-gray-400 mt-1">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b=>b.status!=='empty').length}명 • 30초 자동 동기화 • Spark 무료</p>
         </div>
         <div className="flex items-center gap-2">
           <button className="btn btn-gray" onClick={()=>setShowSettings(true)}>환경 설정</button>
-          <button className="btn btn-gray" onClick={async()=>{await signOutUser();setIsLoggedIn(false);setUserId(null);}}>로그아웃</button>
+          <button className="btn btn-gray" onClick={async()=>{ if(!window.confirm('로그아웃 하시겠습니까? 다음 접속 시 다시 로그인해야 합니다.')) return; await signOutUser();setIsLoggedIn(false);setUserId(null);}}>로그아웃</button>
         </div>
       </header>
 
