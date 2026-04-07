@@ -248,13 +248,14 @@ function useFirestoreSync(userId) {
   const isRemoteUpdate = useRef(false);   // 원격 업데이트 수신 중 플래그
   const saveTimerRef   = useRef(null);     // 디바운스 타이머
   const isFirstSnapshot = useRef(true);    // 첫 스냅샷 여부
+  const isInitialized  = useRef(false);    // 초기 로드 완료 여부
 
   settingsRef.current = settings;
   bedsRef.current     = beds;
 
   // ── Firestore에 저장 (디바운스) ──
   const saveToFirestore = useCallback((newSettings, newBeds) => {
-    if (!userId) return;
+    if (!userId || !isInitialized.current) return;
 
     // 로컬 스토리지는 즉시 저장
     saveLocalStorage({ settings: newSettings, beds: newBeds });
@@ -327,17 +328,19 @@ function useFirestoreSync(userId) {
           // 로컬 스토리지도 갱신
           saveLocalStorage({ settings: data.settings || settingsRef.current, beds: data.beds });
 
-          // 플래그 해제 (다음 tick)
-          setTimeout(() => { isRemoteUpdate.current = false; }, 0);
+          // 플래그 해제 (React 배치 업데이트 완료 후)
+          setTimeout(() => { isRemoteUpdate.current = false; }, 100);
 
           if (isFirstSnapshot.current) {
             isFirstSnapshot.current = false;
+            isInitialized.current = true;
             setSyncStatus('saved');
             setTimeout(() => setSyncStatus(prev => prev === 'saved' ? 'idle' : prev), 2000);
           }
         } else if (isFirstSnapshot.current) {
           // 문서가 없으면 현재 로컬 데이터를 업로드
           isFirstSnapshot.current = false;
+          isInitialized.current = true;
           saveToFirestore(settingsRef.current, bedsRef.current);
         }
       },
