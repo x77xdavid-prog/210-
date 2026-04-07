@@ -340,20 +340,6 @@ function useFirestoreSync(userId) {
 
   return { settings, beds, updateSettings, updateBeds, syncStatus };
 }
-      (err) => {
-        console.error('onSnapshot error:', err);
-        setSyncStatus('error');
-      }
-    );
-
-    return () => {
-      unsubscribe();
-      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    };
-  }, [userId, doSave]);
-
-  return { settings, beds, updateSettings, updateBeds, syncStatus };
-}
 
 
 /* ── 컴포넌트: BedCard ── */
