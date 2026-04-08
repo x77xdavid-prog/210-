@@ -116,14 +116,20 @@ function signOutUser(){ return auth.signOut(); }
 function useFirestorePolling(userId){
   const [settings,setSettings]=useState(()=>{ const s=loadLS(); return {...DEFAULT_SETTINGS,...(s?.settings||{})}; });
   const [beds,setBeds]=useState(()=>{ const s=loadLS(); return s?.beds?.length?s.beds:makeBeds(DEFAULT_SETTINGS.totalBeds,DEFAULT_SETTINGS.startBedNumber,DEFAULT_SETTINGS.bedPrefix); });
+  const [notices,setNotices]=useState(()=>{ const s=loadLS(); return s?.notices||[]; });
+  const [surgeries,setSurgeries]=useState(()=>{ const s=loadLS(); return s?.surgeries||[]; });
   const [syncStatus,setSyncStatus]=useState('idle');
   const settingsRef  = useRef(settings);
   const bedsRef      = useRef(beds);
+  const noticesRef   = useRef(notices);
+  const surgeriesRef = useRef(surgeries);
   const debounceTimer= useRef(null);
   const isMounted    = useRef(true);
   const lastSaveTime = useRef(0);
   settingsRef.current=settings;
   bedsRef.current=beds;
+  noticesRef.current=notices;
+  surgeriesRef.current=surgeries;
 
   const fetchFromServer = useCallback(async()=>{
     if(!userId||!navigator.onLine) return;
@@ -136,19 +142,21 @@ function useFirestorePolling(userId){
         if(serverTs > lastSaveTime.current){
           if(d.settings) setSettings(d.settings);
           if(Array.isArray(d.beds)) setBeds(d.beds);
-          saveLS({settings:d.settings,beds:d.beds});
+          if(Array.isArray(d.notices)) setNotices(d.notices);
+          if(Array.isArray(d.surgeries)) setSurgeries(d.surgeries);
+          saveLS({settings:d.settings,beds:d.beds,notices:d.notices||[],surgeries:d.surgeries||[]});
         }
       }
     } catch(err){ console.warn('Poll failed:',err.message); }
   },[userId]);
 
-  const flushSave = useCallback(async(s,b)=>{
+  const flushSave = useCallback(async(s,b,n,sur)=>{
     if(!userId) return;
     if(!navigator.onLine){ setSyncStatus('offline'); return; }
     setSyncStatus('saving');
     try {
       await db.collection('wardData').doc(userId).set({
-        settings:s, beds:b,
+        settings:s, beds:b, notices:n, surgeries:sur,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       if(!isMounted.current) return;
@@ -158,24 +166,37 @@ function useFirestorePolling(userId){
     } catch(err){
       if(!isMounted.current) return;
       console.warn('Save error:', err.code, err.message);
-      // Spark 한도 초과 시 로컬에는 이미 저장됨 — 데이터 손실 없음
       setSyncStatus('error');
     }
   },[userId]);
 
-  const saveNow = useCallback((s,b)=>{
-    saveLS({settings:s,beds:b});
+  const saveNow = useCallback((s,b,n,sur)=>{
+    saveLS({settings:s,beds:b,notices:n,surgeries:sur});
     setSyncStatus('saving');
     if(debounceTimer.current) clearTimeout(debounceTimer.current);
-    debounceTimer.current = setTimeout(()=>flushSave(s,b), 1500);
+    debounceTimer.current = setTimeout(()=>flushSave(s,b,n,sur), 1500);
   },[flushSave]);
 
-  const updateSettings = useCallback((ns)=>{ setSettings(ns); saveNow(ns,bedsRef.current); },[saveNow]);
+  const updateSettings = useCallback((ns)=>{ setSettings(ns); saveNow(ns,bedsRef.current,noticesRef.current,surgeriesRef.current); },[saveNow]);
   const updateBeds = useCallback((uov)=>{
     setBeds(prev=>{
       const nb=typeof uov==='function'?uov(prev):uov;
-      saveNow(settingsRef.current,nb);
+      saveNow(settingsRef.current,nb,noticesRef.current,surgeriesRef.current);
       return nb;
+    });
+  },[saveNow]);
+  const updateNotices = useCallback((uov)=>{
+    setNotices(prev=>{
+      const nn=typeof uov==='function'?uov(prev):uov;
+      saveNow(settingsRef.current,bedsRef.current,nn,surgeriesRef.current);
+      return nn;
+    });
+  },[saveNow]);
+  const updateSurgeries = useCallback((uov)=>{
+    setSurgeries(prev=>{
+      const ns=typeof uov==='function'?uov(prev):uov;
+      saveNow(settingsRef.current,bedsRef.current,noticesRef.current,ns);
+      return ns;
     });
   },[saveNow]);
 
@@ -198,7 +219,7 @@ function useFirestorePolling(userId){
     };
   },[userId, fetchFromServer]);
 
-  return {settings,beds,updateSettings,updateBeds,syncStatus};
+  return {settings,beds,notices,surgeries,updateSettings,updateBeds,updateNotices,updateSurgeries,syncStatus};
 }
 /* ── 알림음 (Web Audio API, 외부파일 불필요) ── */
 let _audioCtx = null;
@@ -239,18 +260,15 @@ function soundAlert(){
 /* ══════════════════════════════════════
    공지사항 모달
    ══════════════════════════════════════ */
-function NoticeModal({onClose, userId}){
-  const [notices,setNotices]=useState([
-    {id:1,title:'오늘 오후 병동 회의 (14:00)',body:'컨퍼런스룸에서 진행 예정입니다.',urgent:true,time:'09:00',author:'관리자'},
-    {id:2,title:'506호 퇴원 시 보호자 동반 필수',body:'보호자에게 미리 연락 바랍니다.',urgent:false,time:'08:30',author:'관리자'},
-  ]);
+function NoticeModal({onClose, userId, notices, onNoticesChange}){
   const [form,setForm]=useState({title:'',body:'',urgent:false});
   const add=()=>{
     if(!form.title.trim()) return;
     const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-    setNotices(p=>[{id:Date.now(),...form,time:now,author:'관리자'},...p]);
+    onNoticesChange(p=>[{id:Date.now(),...form,time:now,author:'관리자'},...p]);
     setForm({title:'',body:'',urgent:false});
   };
+  const remove=(id)=>onNoticesChange(p=>p.filter(n=>n.id!==id));
   return(
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal-box">
@@ -270,11 +288,13 @@ function NoticeModal({onClose, userId}){
           </div>
         </div>
         <div className="space-y-2">
+          {notices.length===0&&<div style={{fontSize:12,color:'#9ca3af',textAlign:'center',padding:'16px 0'}}>등록된 공지사항이 없습니다.</div>}
           {notices.map(n=>(
-            <div key={n.id} style={{padding:'10px 12px',borderLeft:`3px solid ${n.urgent?'#ef4444':'#3b82f6'}`,background:n.urgent?'#fff1f2':'#eff6ff',borderRadius:'0 8px 8px 0'}}>
+            <div key={n.id} style={{padding:'10px 12px',borderLeft:`3px solid ${n.urgent?'#ef4444':'#3b82f6'}`,background:n.urgent?'#fff1f2':'#eff6ff',borderRadius:'0 8px 8px 0',position:'relative'}}>
               <div style={{fontSize:13,fontWeight:700,color:n.urgent?'#881337':'#1e3a8a'}}>{n.title}</div>
               {n.body&&<div style={{fontSize:12,color:n.urgent?'#9f1239':'#1d4ed8',marginTop:2}}>{n.body}</div>}
               <div style={{fontSize:10,color:'#6b7280',marginTop:4}}>{n.author} · {n.time}{n.urgent&&<span style={{color:'#ef4444',fontWeight:700,marginLeft:4}}>긴급</span>}</div>
+              <button onClick={()=>remove(n.id)} style={{position:'absolute',top:8,right:8,background:'none',border:'none',cursor:'pointer',fontSize:14,color:'#9ca3af',lineHeight:1}}>✕</button>
             </div>
           ))}
         </div>
@@ -286,17 +306,15 @@ function NoticeModal({onClose, userId}){
 /* ══════════════════════════════════════
    수술 일정 모달
    ══════════════════════════════════════ */
-function SurgeryModal({onClose, beds}){
-  const [surgeries,setSurgeries]=useState([
-    {id:1,bed:'506호',patient:'문향숙',time:'08:00',name:'CTS wrist 수술',doctor:'김정형',done:false},
-    {id:2,bed:'505호',patient:'이미선',time:'14:00',name:'슬관절경',doctor:'박정형',done:false},
-  ]);
+function SurgeryModal({onClose, beds, surgeries, onSurgeriesChange}){
   const [form,setForm]=useState({bed:'',time:'08:00',name:'',doctor:''});
   const add=()=>{
     if(!form.bed||!form.name) return;
-    setSurgeries(p=>[...p,{id:Date.now(),...form,patient:'',done:false}]);
+    onSurgeriesChange(p=>[...p,{id:Date.now(),...form,patient:'',done:false}]);
     setForm({bed:'',time:'08:00',name:'',doctor:''});
   };
+  const remove=(id)=>onSurgeriesChange(p=>p.filter(s=>s.id!==id));
+  const toggleDone=(id)=>onSurgeriesChange(p=>p.map(x=>x.id===id?{...x,done:!x.done}:x));
   const today=new Date().toLocaleDateString('ko-KR',{month:'long',day:'numeric'});
   return(
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -307,7 +325,19 @@ function SurgeryModal({onClose, beds}){
         </div>
         <div className="space-y-2 mb-4">
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            <div><label className="form-label">병상</label><input className="form-input" placeholder="501호" value={form.bed} onChange={e=>setForm(p=>({...p,bed:e.target.value}))}/></div>
+            <div>
+              <label className="form-label">병상</label>
+              <select className="form-input" value={form.bed} onChange={e=>setForm(p=>({...p,bed:e.target.value}))}>
+                <option value="">병상 선택</option>
+                {beds.filter(b=>b.status!=='empty').map(b=>(
+                  <option key={b.id} value={`${b.bedNumber}호`}>{b.bedNumber}호{b.patient?.name?` (${b.patient.name})`:''}</option>
+                ))}
+                <option value="" disabled>──────</option>
+                {beds.filter(b=>b.status==='empty').map(b=>(
+                  <option key={b.id} value={`${b.bedNumber}호`}>{b.bedNumber}호 (빈 병상)</option>
+                ))}
+              </select>
+            </div>
             <div><label className="form-label">시간</label><input className="form-input" type="time" value={form.time} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div>
           </div>
           <div><label className="form-label">수술명</label><input className="form-input" placeholder="예: TKR, 척추 고정술" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/></div>
@@ -315,7 +345,8 @@ function SurgeryModal({onClose, beds}){
           <button className="btn btn-primary" style={{width:'100%'}} onClick={add}>등록</button>
         </div>
         <div className="space-y-2">
-          {surgeries.sort((a,b)=>a.time.localeCompare(b.time)).map(s=>(
+          {surgeries.length===0&&<div style={{fontSize:12,color:'#9ca3af',textAlign:'center',padding:'16px 0'}}>등록된 수술 일정이 없습니다.</div>}
+          {[...surgeries].sort((a,b)=>a.time.localeCompare(b.time)).map(s=>(
             <div key={s.id} style={{display:'flex',alignItems:'center',padding:'10px 12px',borderRadius:8,border:`0.5px solid ${s.done?'#86efac':'#fde68a'}`,background:s.done?'#f0fdf4':'#fffbeb',gap:10}}>
               <div style={{fontWeight:800,fontSize:18,color:'#111827',minWidth:48}}>{s.time}</div>
               <div style={{flex:1}}>
@@ -323,9 +354,10 @@ function SurgeryModal({onClose, beds}){
                 <div style={{fontSize:11,color:'#6b7280'}}>{s.name}{s.doctor&&` · ${s.doctor}`}</div>
               </div>
               <button className="btn btn-sm" style={{background:s.done?'#e5e7eb':'#16a34a',color:s.done?'#374151':'white'}}
-                onClick={()=>setSurgeries(p=>p.map(x=>x.id===s.id?{...x,done:!x.done}:x))}>
+                onClick={()=>toggleDone(s.id)}>
                 {s.done?'취소':'완료'}
               </button>
+              <button onClick={()=>remove(s.id)} style={{background:'none',border:'none',cursor:'pointer',fontSize:16,color:'#9ca3af',lineHeight:1,padding:'0 2px'}}>✕</button>
             </div>
           ))}
         </div>
@@ -521,26 +553,38 @@ function AlertBanners({beds, dismissed, onDismiss}){
 }
 
 /* ── BedCard ── */
-function BedCard({bed,settings,onClick,onQuickDischarge}){
+function BedCard({bed,settings,onClick,onQuickDischarge,surgeries}){
   const cfg=STATUS[bed.status]||STATUS.empty;
   const overdue=isOverdue(bed.status,settings);
   const isEmpty=bed.status==='empty';
   const hasPatient=!isEmpty&&bed.patient.name;
+  // 이 병상에 해당하는 오늘 수술 일정 찾기 (병상번호 앞부분 매칭: "501호" ↔ "501")
+  const bedSurgeries=(surgeries||[]).filter(s=>{
+    const sbed=s.bed.replace(/호$/,'').trim();
+    const bnum=String(bed.bedNumber).replace(/호$/,'').trim();
+    return sbed===bnum && !s.done;
+  });
+  const hasSurgery=bedSurgeries.length>0;
   return(
     <div className={`bed-card rounded-xl border-2 p-3${overdue?' overdue':''}`}
-      style={{background:cfg.bg,borderColor:cfg.border,boxShadow:'0 1px 4px rgba(0,0,0,0.06)'}}
+      style={{
+        background: hasSurgery ? '#fff7ed' : cfg.bg,
+        borderColor: hasSurgery ? '#fb923c' : cfg.border,
+        boxShadow: hasSurgery ? '0 0 0 2px rgba(251,146,60,0.25), 0 1px 4px rgba(0,0,0,0.06)' : '0 1px 4px rgba(0,0,0,0.06)',
+      }}
       onClick={()=>onClick(bed)}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:4,marginBottom:7}}>
         <span style={{fontWeight:800,fontSize:17,color:'#111827',letterSpacing:'-0.5px'}}>{bed.bedNumber}호</span>
         <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
           {calcDday(bed.patient?.dischargeDate)===1&&<span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:99,background:'#fecdd3',color:'#881337'}}>D-1</span>}
           {calcStayDays(bed.patient?.admittedDate)>=7&&bed.status!=='empty'&&<span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:99,background:'#fde68a',color:'#92400e'}}>장기</span>}
-          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,whiteSpace:'nowrap',background:cfg.badgeBg,color:cfg.badgeText}}>{cfg.label}</span>
+          {hasSurgery&&<span style={{fontSize:9,fontWeight:700,padding:'2px 6px',borderRadius:99,background:'#fb923c',color:'#fff'}}>🔪수술</span>}
+          <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:999,whiteSpace:'nowrap',background:hasSurgery?'#fb923c':cfg.badgeBg,color:hasSurgery?'#fff':cfg.badgeText}}>{cfg.label}</span>
         </div>
       </div>
       {hasPatient?(
         <div>
-          <div style={{fontSize:13,fontWeight:700,color:cfg.textColor,marginBottom:2}}>
+          <div style={{fontSize:13,fontWeight:700,color:hasSurgery?'#9a3412':cfg.textColor,marginBottom:2}}>
             {bed.patient.name}{bed.patient.gender?`・${bed.patient.gender==='M'?'남':'여'}`:''}{bed.patient.age?`・${bed.patient.age}세`:''}
           </div>
           {bed.patient.diagnosis&&<div style={{fontSize:11,color:'#9ca3af',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{bed.patient.diagnosis}</div>}
@@ -548,8 +592,32 @@ function BedCard({bed,settings,onClick,onQuickDischarge}){
           {bed.patient.dischargeDate&&<div style={{fontSize:11,fontWeight:600,color:'#374151',marginTop:4}}>퇴원일 {bed.patient.dischargeDate} ・ {getDdayDisplay(bed.patient.dischargeDate)}</div>}
           {bed.patient.notes&&<div style={{fontSize:11,fontWeight:600,color:'#374151',marginTop:4,whiteSpace:'normal',wordBreak:'break-word'}}>메모 {bed.patient.notes}</div>}
           {bed.patient.isSurgery&&<div style={{fontSize:10,color:'#f97316',fontWeight:700,marginTop:3}}>[수술 환자]</div>}
+          {hasSurgery&&(
+            <div style={{marginTop:6,borderTop:'1px solid #fed7aa',paddingTop:5}}>
+              {bedSurgeries.map(s=>(
+                <div key={s.id} style={{display:'flex',alignItems:'center',gap:4,marginTop:3}}>
+                  <span style={{fontSize:10,fontWeight:800,color:'#ea580c',minWidth:32}}>{s.time}</span>
+                  <span style={{fontSize:10,color:'#9a3412',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}{s.doctor?` · ${s.doctor}`:''}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      ):<div style={{fontSize:12,color:'#d1d5db',fontStyle:'italic'}}>{isEmpty?'빈 병상':'정보 없음'}</div>}
+      ):(
+        <div>
+          <div style={{fontSize:12,color:'#d1d5db',fontStyle:'italic'}}>{isEmpty?'빈 병상':'정보 없음'}</div>
+          {hasSurgery&&(
+            <div style={{marginTop:6,borderTop:'1px solid #fed7aa',paddingTop:5}}>
+              {bedSurgeries.map(s=>(
+                <div key={s.id} style={{display:'flex',alignItems:'center',gap:4,marginTop:3}}>
+                  <span style={{fontSize:10,fontWeight:800,color:'#ea580c',minWidth:32}}>{s.time}</span>
+                  <span style={{fontSize:10,color:'#9a3412',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}{s.doctor?` · ${s.doctor}`:''}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {overdue&&(
         <div style={{marginTop:6,display:'flex',alignItems:'center',justifyContent:'space-between'}} onClick={e=>e.stopPropagation()}>
           <span style={{fontSize:11,color:'#ef4444',fontWeight:700}}>시간 초과</span>
@@ -737,15 +805,6 @@ function App(){
   const [showSurgery,setShowSurgery]=useState(false);
   const [showStats,setShowStats]=useState(false);
   const handleDismiss=(key)=>setDismissed(prev=>[...prev,key]);
-  // beds 업데이트 시 dismissed 초기화 → 새 알림이면 소리 다시 울림
-  const prevBedsRef = useRef(beds);
-  useEffect(()=>{
-    const changed = JSON.stringify(beds) !== JSON.stringify(prevBedsRef.current);
-    if(changed){
-      setDismissed([]); // 병상 데이터 바뀌면 알림 다시 체크
-      prevBedsRef.current = beds;
-    }
-  },[beds]);
   const [selectedBed,setSelectedBed]=useState(null);
   const [showSettings,setShowSettings]=useState(false);
   const [nowDisplay,setNowDisplay]=useState(getNowDisplay());
@@ -759,7 +818,17 @@ function App(){
     return()=>unsub();
   },[]);
 
-  const {settings,beds,updateSettings,updateBeds,syncStatus}=useFirestorePolling(userId);
+  const {settings,beds,notices,surgeries,updateSettings,updateBeds,updateNotices,updateSurgeries,syncStatus}=useFirestorePolling(userId);
+
+  // beds 업데이트 시 dismissed 초기화 → 새 알림이면 소리 다시 울림
+  const prevBedsRef = useRef(beds);
+  useEffect(()=>{
+    const changed = JSON.stringify(beds) !== JSON.stringify(prevBedsRef.current);
+    if(changed){
+      setDismissed([]); // 병상 데이터 바뀌면 알림 다시 체크
+      prevBedsRef.current = beds;
+    }
+  },[beds]);
 
   useEffect(()=>{ const t=setInterval(()=>setNowDisplay(getNowDisplay()),60000); return()=>clearInterval(t); },[]);
 
@@ -805,15 +874,15 @@ function App(){
       <AlertBanners beds={beds} dismissed={dismissed} onDismiss={handleDismiss}/>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
         {filteredBeds.map(bed=>(
-          <BedCard key={bed.id} bed={bed} settings={settings} onClick={setSelectedBed}
+          <BedCard key={bed.id} bed={bed} settings={settings} onClick={setSelectedBed} surgeries={surgeries}
             onQuickDischarge={(b)=>updateBeds(prev=>prev.map(x=>x.id===b.id?{...x,status:'empty',patient:{...EMPTY_PATIENT}}:x))}/>
         ))}
       </div>
 
       {selectedBed&&<BedModal bed={selectedBed} onClose={()=>setSelectedBed(null)}
         onSave={(updated)=>{updateBeds(prev=>prev.map(b=>b.id===updated.id?updated:b));setSelectedBed(null);}}/>}
-      {showNotice&&<NoticeModal onClose={()=>setShowNotice(false)} userId={userId}/>}
-      {showSurgery&&<SurgeryModal onClose={()=>setShowSurgery(false)} beds={beds}/>}
+      {showNotice&&<NoticeModal onClose={()=>setShowNotice(false)} userId={userId} notices={notices} onNoticesChange={updateNotices}/>}
+      {showSurgery&&<SurgeryModal onClose={()=>setShowSurgery(false)} beds={beds} surgeries={surgeries} onSurgeriesChange={updateSurgeries}/>}
       {showStats&&<StatsModal onClose={()=>setShowStats(false)} beds={beds}/>}
       {showSettings&&<SettingsModal settings={settings} onClose={()=>setShowSettings(false)}
         onSave={(s)=>{updateSettings(s);updateBeds(prev=>makeBeds(parseInt(s.totalBeds),parseInt(s.startBedNumber),s.bedPrefix,prev));setShowSettings(false);}}/>}
