@@ -235,6 +235,179 @@ function soundAlert(){
   playTone(550,'square',0.15,0.3,t+0.18);
 }
 
+
+/* ══════════════════════════════════════
+   공지사항 모달
+   ══════════════════════════════════════ */
+function NoticeModal({onClose, userId}){
+  const [notices,setNotices]=useState([
+    {id:1,title:'오늘 오후 병동 회의 (14:00)',body:'컨퍼런스룸에서 진행 예정입니다.',urgent:true,time:'09:00',author:'관리자'},
+    {id:2,title:'506호 퇴원 시 보호자 동반 필수',body:'보호자에게 미리 연락 바랍니다.',urgent:false,time:'08:30',author:'관리자'},
+  ]);
+  const [form,setForm]=useState({title:'',body:'',urgent:false});
+  const add=()=>{
+    if(!form.title.trim()) return;
+    const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    setNotices(p=>[{id:Date.now(),...form,time:now,author:'관리자'},...p]);
+    setForm({title:'',body:'',urgent:false});
+  };
+  return(
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal-box">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-extrabold">공지사항</h2>
+          <button className="btn btn-gray btn-sm" onClick={onClose}>닫기</button>
+        </div>
+        <div className="space-y-2 mb-4">
+          <input className="form-input" placeholder="공지 제목" value={form.title} onChange={e=>setForm(p=>({...p,title:e.target.value}))}/>
+          <textarea className="form-input" placeholder="내용" rows={2} value={form.body} onChange={e=>setForm(p=>({...p,body:e.target.value}))}/>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <label style={{display:'flex',alignItems:'center',gap:5,fontSize:13,cursor:'pointer'}}>
+              <input type="checkbox" checked={form.urgent} onChange={e=>setForm(p=>({...p,urgent:e.target.checked}))}/>
+              긴급 공지
+            </label>
+            <button className="btn btn-primary btn-sm" style={{marginLeft:'auto'}} onClick={add}>등록</button>
+          </div>
+        </div>
+        <div className="space-y-2">
+          {notices.map(n=>(
+            <div key={n.id} style={{padding:'10px 12px',borderLeft:`3px solid ${n.urgent?'#ef4444':'#3b82f6'}`,background:n.urgent?'#fff1f2':'#eff6ff',borderRadius:'0 8px 8px 0'}}>
+              <div style={{fontSize:13,fontWeight:700,color:n.urgent?'#881337':'#1e3a8a'}}>{n.title}</div>
+              {n.body&&<div style={{fontSize:12,color:n.urgent?'#9f1239':'#1d4ed8',marginTop:2}}>{n.body}</div>}
+              <div style={{fontSize:10,color:'#6b7280',marginTop:4}}>{n.author} · {n.time}{n.urgent&&<span style={{color:'#ef4444',fontWeight:700,marginLeft:4}}>긴급</span>}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   수술 일정 모달
+   ══════════════════════════════════════ */
+function SurgeryModal({onClose, beds}){
+  const [surgeries,setSurgeries]=useState([
+    {id:1,bed:'506호',patient:'문향숙',time:'08:00',name:'CTS wrist 수술',doctor:'김정형',done:false},
+    {id:2,bed:'505호',patient:'이미선',time:'14:00',name:'슬관절경',doctor:'박정형',done:false},
+  ]);
+  const [form,setForm]=useState({bed:'',time:'08:00',name:'',doctor:''});
+  const add=()=>{
+    if(!form.bed||!form.name) return;
+    setSurgeries(p=>[...p,{id:Date.now(),...form,patient:'',done:false}]);
+    setForm({bed:'',time:'08:00',name:'',doctor:''});
+  };
+  const today=new Date().toLocaleDateString('ko-KR',{month:'long',day:'numeric'});
+  return(
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal-box">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-extrabold">수술 일정 — {today}</h2>
+          <button className="btn btn-gray btn-sm" onClick={onClose}>닫기</button>
+        </div>
+        <div className="space-y-2 mb-4">
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            <div><label className="form-label">병상</label><input className="form-input" placeholder="501호" value={form.bed} onChange={e=>setForm(p=>({...p,bed:e.target.value}))}/></div>
+            <div><label className="form-label">시간</label><input className="form-input" type="time" value={form.time} onChange={e=>setForm(p=>({...p,time:e.target.value}))}/></div>
+          </div>
+          <div><label className="form-label">수술명</label><input className="form-input" placeholder="예: TKR, 척추 고정술" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))}/></div>
+          <div><label className="form-label">집도의</label><input className="form-input" placeholder="담당 의사" value={form.doctor} onChange={e=>setForm(p=>({...p,doctor:e.target.value}))}/></div>
+          <button className="btn btn-primary" style={{width:'100%'}} onClick={add}>등록</button>
+        </div>
+        <div className="space-y-2">
+          {surgeries.sort((a,b)=>a.time.localeCompare(b.time)).map(s=>(
+            <div key={s.id} style={{display:'flex',alignItems:'center',padding:'10px 12px',borderRadius:8,border:`0.5px solid ${s.done?'#86efac':'#fde68a'}`,background:s.done?'#f0fdf4':'#fffbeb',gap:10}}>
+              <div style={{fontWeight:800,fontSize:18,color:'#111827',minWidth:48}}>{s.time}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:600}}>{s.bed} {s.patient}</div>
+                <div style={{fontSize:11,color:'#6b7280'}}>{s.name}{s.doctor&&` · ${s.doctor}`}</div>
+              </div>
+              <button className="btn btn-sm" style={{background:s.done?'#e5e7eb':'#16a34a',color:s.done?'#374151':'white'}}
+                onClick={()=>setSurgeries(p=>p.map(x=>x.id===s.id?{...x,done:!x.done}:x))}>
+                {s.done?'취소':'완료'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   통계 모달
+   ══════════════════════════════════════ */
+function StatsModal({onClose, beds}){
+  const total=beds.length;
+  const occupied=beds.filter(b=>b.status!=='empty').length;
+  const rate=total>0?Math.round(occupied/total*100):0;
+  const statusCounts={};
+  beds.forEach(b=>{ statusCounts[b.status]=(statusCounts[b.status]||0)+1; });
+  const avgStay = beds.filter(b=>b.status!=='empty'&&b.patient?.admittedDate).reduce((sum,b)=>{
+    const d=calcStayDays(b.patient.admittedDate); return sum+d;
+  },0) / (beds.filter(b=>b.status!=='empty'&&b.patient?.admittedDate).length||1);
+
+  const statusLabels={admitted:'입원 중',morning_discharge:'오전 퇴원',afternoon_discharge:'오후 퇴원',afternoon_admission:'오후 입원',next_day_discharge:'다음날 퇴원',provisional_discharge:'가퇴원',empty:'빈 병상'};
+  const statusColors={admitted:'#3b82f6',morning_discharge:'#f59e0b',afternoon_discharge:'#f97316',afternoon_admission:'#22c55e',next_day_discharge:'#a855f7',provisional_discharge:'#f43f5e',empty:'#9ca3af'};
+
+  return(
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal-box">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-extrabold">병상 통계</h2>
+          <button className="btn btn-gray btn-sm" onClick={onClose}>닫기</button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8,marginBottom:14}}>
+          {[['가동률',rate+'%','#1d4ed8'],['입원',occupied+'명','#16a34a'],['평균재원',Math.round(avgStay)+'일','#9333ea']].map(([l,v,c])=>(
+            <div key={l} style={{background:'#f8fafc',borderRadius:10,padding:12,textAlign:'center'}}>
+              <div style={{fontSize:26,fontWeight:800,color:c}}>{v}</div>
+              <div style={{fontSize:10,color:'#6b7280',fontWeight:600,marginTop:2}}>{l}</div>
+            </div>
+          ))}
+        </div>
+        <div className="form-label" style={{marginBottom:8}}>상태별 현황</div>
+        <div className="space-y-2">
+          {Object.entries(statusCounts).filter(([k])=>k!=='empty').map(([k,v])=>(
+            <div key={k}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#374151',marginBottom:2}}>
+                <span>{statusLabels[k]||k}</span><span>{v}명</span>
+              </div>
+              <div style={{background:'#e5e7eb',borderRadius:99,height:7}}>
+                <div style={{height:7,borderRadius:99,background:statusColors[k]||'#6b7280',width:`${v/total*100}%`,transition:'width 0.5s'}}/>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════
+   인쇄 버튼 (간단)
+   ══════════════════════════════════════ */
+function printWard(beds, settings){
+  const win=window.open('','_blank');
+  const rows=beds.map(b=>`
+    <tr style="border-bottom:1px solid #eee">
+      <td style="padding:6px 10px;font-weight:700">${b.bedNumber}호</td>
+      <td style="padding:6px 10px">${b.status==='empty'?'빈 병상':STATUS[b.status]?.label||b.status}</td>
+      <td style="padding:6px 10px">${b.patient?.name||''}</td>
+      <td style="padding:6px 10px">${b.patient?.diagnosis||''}</td>
+      <td style="padding:6px 10px">${b.patient?.dischargeDate||''}</td>
+      <td style="padding:6px 10px">${b.patient?.notes||''}</td>
+    </tr>`).join('');
+  win.document.write(`<html><head><title>병동현황</title>
+    <style>body{font-family:'Malgun Gothic',sans-serif;padding:20px}h2{margin-bottom:4px}p{color:#666;font-size:12px;margin-bottom:12px}table{width:100%;border-collapse:collapse}th{background:#4a4847;color:white;padding:7px 10px;font-size:12px;text-align:left}td{font-size:12px}</style>
+    </head><body>
+    <h2>${settings.wardName}</h2>
+    <p>${new Date().toLocaleString('ko-KR')} 기준</p>
+    <table><tr>${['병상','상태','환자명','진단명','퇴원예정일','메모'].map(h=>`<th>${h}</th>`).join('')}</tr>${rows}</table>
+    </body></html>`);
+  win.document.close();
+  win.print();
+}
+
 /* ── 알림 유틸리티 ── */
 function calcDday(dateStr){
   if(!dateStr) return null;
@@ -439,6 +612,25 @@ function BedModal({bed,onSave,onClose}){
             </div>
           </div>
         )}
+        {(status==='morning_discharge'||status==='afternoon_discharge'||status==='next_day_discharge')&&(
+          <div style={{marginTop:14}}>
+            <hr className="section-divider"/>
+            <div className="form-label" style={{marginBottom:8}}>퇴원 체크리스트</div>
+            {['처방전 발행','보호자 연락','약 수령','퇴원 교육','외래 예약','병실 정리'].map((item,i)=>{
+              const key='chk_'+i;
+              const checked=(patient[key]||false);
+              return(
+                <div key={i} onClick={()=>setField(key,!checked)}
+                  style={{display:'flex',alignItems:'center',gap:8,padding:'7px 10px',borderRadius:7,border:`0.5px solid ${checked?'#86efac':'#e5e7eb'}`,background:checked?'#f0fdf4':'white',marginBottom:5,cursor:'pointer'}}>
+                  <div style={{width:18,height:18,borderRadius:'50%',border:`2px solid ${checked?'#16a34a':'#d1d5db'}`,background:checked?'#16a34a':'white',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,color:'white',flexShrink:0}}>
+                    {checked&&'✓'}
+                  </div>
+                  <span style={{fontSize:12,color:checked?'#16a34a':'#374151',textDecoration:checked?'line-through':'none'}}>{item}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="flex justify-between mt-6">
           <button className="btn btn-danger" onClick={()=>onSave({...bed,status:'empty',patient:{...EMPTY_PATIENT}})}>병상 비우기</button>
           <div className="flex gap-2">
@@ -541,6 +733,9 @@ function App(){
   const [isCheckingAuth,setIsCheckingAuth]=useState(true);
   const [filter,setFilter]=useState('all');
   const [dismissed,setDismissed]=useState([]);
+  const [showNotice,setShowNotice]=useState(false);
+  const [showSurgery,setShowSurgery]=useState(false);
+  const [showStats,setShowStats]=useState(false);
   const handleDismiss=(key)=>setDismissed(prev=>[...prev,key]);
   // beds 업데이트 시 dismissed 초기화 → 새 알림이면 소리 다시 울림
   const prevBedsRef = useRef(beds);
@@ -582,9 +777,13 @@ function App(){
           <h1 className="text-2xl font-black text-gray-900">{settings.wardName}</h1>
           <p className="text-xs text-gray-400 mt-1">{nowDisplay.dateStr} {nowDisplay.timeStr} • 입원 {beds.filter(b=>b.status!=='empty').length}명 • 30초 자동 동기화 • Spark 무료</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="btn btn-gray" onClick={()=>setShowSettings(true)}>환경 설정</button>
-          <button className="btn btn-gray" onClick={async()=>{ if(!window.confirm('로그아웃 하시겠습니까? 다음 접속 시 다시 로그인해야 합니다.')) return; await signOutUser();setIsLoggedIn(false);setUserId(null);}}>로그아웃</button>
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <button className="btn btn-gray btn-sm" onClick={()=>setShowNotice(true)}>📋 공지</button>
+          <button className="btn btn-gray btn-sm" onClick={()=>setShowSurgery(true)}>🔪 수술</button>
+          <button className="btn btn-gray btn-sm" onClick={()=>setShowStats(true)}>📊 통계</button>
+          <button className="btn btn-gray btn-sm" onClick={()=>printWard(beds,settings)}>🖨 인쇄</button>
+          <button className="btn btn-gray btn-sm" onClick={()=>setShowSettings(true)}>⚙ 설정</button>
+          <button className="btn btn-gray btn-sm" onClick={async()=>{ if(!window.confirm('로그아웃 하시겠습니까?')) return; await signOutUser();setIsLoggedIn(false);setUserId(null);}}>로그아웃</button>
         </div>
       </header>
 
@@ -613,6 +812,9 @@ function App(){
 
       {selectedBed&&<BedModal bed={selectedBed} onClose={()=>setSelectedBed(null)}
         onSave={(updated)=>{updateBeds(prev=>prev.map(b=>b.id===updated.id?updated:b));setSelectedBed(null);}}/>}
+      {showNotice&&<NoticeModal onClose={()=>setShowNotice(false)} userId={userId}/>}
+      {showSurgery&&<SurgeryModal onClose={()=>setShowSurgery(false)} beds={beds}/>}
+      {showStats&&<StatsModal onClose={()=>setShowStats(false)} beds={beds}/>}
       {showSettings&&<SettingsModal settings={settings} onClose={()=>setShowSettings(false)}
         onSave={(s)=>{updateSettings(s);updateBeds(prev=>makeBeds(parseInt(s.totalBeds),parseInt(s.startBedNumber),s.bedPrefix,prev));setShowSettings(false);}}/>}
     </div>
