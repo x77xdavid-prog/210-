@@ -20,7 +20,7 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: 'Malgun Gothic', -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f0f2f5; min-height: 100vh; }
-    .bed-card { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; user-select: none; }
+    .bed-card { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .bed-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.14) !important; }
     .bed-card.overdue { animation: overdue-pulse 1.8s ease-in-out infinite; }
     @keyframes overdue-pulse { 0%,100%{box-shadow:0 0 0 2px transparent;} 50%{box-shadow:0 0 0 3px #ef4444;} }
@@ -1496,6 +1496,7 @@ function BedCard({bed,settings,onClick,onQuickDischarge,surgeries,dragBedId,drop
       onDrop={e=>{e.preventDefault();onDrop&&onDrop(bed.id);}}
       onTouchStart={e=>onBedTouchStart&&onBedTouchStart(e,bed.id)}
       onTouchEnd={()=>onBedTouchEnd&&onBedTouchEnd()}
+      onContextMenu={e=>e.preventDefault()}
       onClick={()=>!isDragging&&onClick(bed)}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:4,marginBottom:7}}>
         <span style={{fontWeight:800,fontSize:17,color:'#111827',letterSpacing:'-0.5px'}}>{bed.bedNumber}호</span>
