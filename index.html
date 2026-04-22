@@ -40,6 +40,9 @@
     .sync-indicator{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:999px;}
     .sync-ok{background:#dcfce7;color:#166534;} .sync-saving{background:#fef9c3;color:#854d0e;} .sync-error{background:#fee2e2;color:#991b1b;}
     @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
+    .bed-card.is-dragging{opacity:0.35;transform:scale(0.95)!important;box-shadow:none!important;cursor:grabbing;}
+    .bed-card.drag-over-target{outline:3px solid #3b82f6;outline-offset:2px;transform:scale(1.04)!important;box-shadow:0 0 0 8px rgba(59,130,246,0.18)!important;transition:transform 0.1s,box-shadow 0.1s;}
+    .drag-ghost{position:fixed;pointer-events:none;z-index:9999;opacity:0.92;transform:rotate(2deg) scale(1.06);box-shadow:0 20px 48px rgba(0,0,0,0.28);border-radius:14px;border:2px solid #3b82f6;background:white;padding:10px 14px;min-width:120px;transition:none;}
   </style>
 </head>
 <body>
@@ -1464,11 +1467,13 @@ function AdmissionModal({onClose, beds, onUpdateBeds}){
 }
 
 /* ── BedCard ── */
-function BedCard({bed,settings,onClick,onQuickDischarge,surgeries}){
+function BedCard({bed,settings,onClick,onQuickDischarge,surgeries,dragBedId,dropBedId,onDragStart,onDragOver,onDragEnd,onDrop,onBedTouchStart,onBedTouchEnd}){
   const cfg=STATUS[bed.status]||STATUS.empty;
   const overdue=isOverdue(bed.status,settings);
   const isEmpty=bed.status==='empty';
   const hasPatient=!isEmpty&&bed.patient.name;
+  const isDragging=dragBedId===bed.id;
+  const isDropTarget=dropBedId===bed.id&&dragBedId!==bed.id;
   // 이 병상에 해당하는 오늘 수술 일정 찾기 (병상번호 앞부분 매칭: "501호" ↔ "501")
   const bedSurgeries=(surgeries||[]).filter(s=>{
     const sbed=s.bed.replace(/호$/,'').trim();
@@ -1477,13 +1482,21 @@ function BedCard({bed,settings,onClick,onQuickDischarge,surgeries}){
   });
   const hasSurgery=bedSurgeries.length>0;
   return(
-    <div className={`bed-card rounded-xl border-2 p-3${overdue?' overdue':''}`}
+    <div className={`bed-card rounded-xl border-2 p-3${overdue?' overdue':''}${isDragging?' is-dragging':''}${isDropTarget?' drag-over-target':''}`}
+      data-bed-id={bed.id}
       style={{
         background: hasSurgery ? '#fff7ed' : cfg.bg,
         borderColor: hasSurgery ? '#fb923c' : cfg.border,
         boxShadow: hasSurgery ? '0 0 0 2px rgba(251,146,60,0.25), 0 1px 4px rgba(0,0,0,0.06)' : '0 1px 4px rgba(0,0,0,0.06)',
       }}
-      onClick={()=>onClick(bed)}>
+      draggable={!isEmpty}
+      onDragStart={e=>{e.dataTransfer.effectAllowed='move';onDragStart&&onDragStart(bed.id);}}
+      onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='move';onDragOver&&onDragOver(bed.id);}}
+      onDragEnd={()=>onDragEnd&&onDragEnd()}
+      onDrop={e=>{e.preventDefault();onDrop&&onDrop(bed.id);}}
+      onTouchStart={e=>onBedTouchStart&&onBedTouchStart(e,bed.id)}
+      onTouchEnd={()=>onBedTouchEnd&&onBedTouchEnd()}
+      onClick={()=>!isDragging&&onClick(bed)}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:4,marginBottom:7}}>
         <span style={{fontWeight:800,fontSize:17,color:'#111827',letterSpacing:'-0.5px'}}>{bed.bedNumber}호</span>
         <div style={{display:'flex',gap:4,alignItems:'center',flexWrap:'wrap',justifyContent:'flex-end'}}>
@@ -1721,6 +1734,13 @@ function App(){
   const [selectedBed,setSelectedBed]=useState(null);
   const [showSettings,setShowSettings]=useState(false);
   const [nowDisplay,setNowDisplay]=useState(getNowDisplay());
+  const [dragBedId,setDragBedId]=useState(null);
+  const [dropBedId,setDropBedId]=useState(null);
+  const [ghostPos,setGhostPos]=useState(null);
+  const dragBedIdRef=useRef(null);
+  const dropBedIdRef=useRef(null);
+  const longPressRef=useRef(null);
+  const touchDragRef=useRef(false);
 
   useEffect(()=>{
     const unsub=auth.onAuthStateChanged((user)=>{
@@ -1757,6 +1777,89 @@ function App(){
   },[beds]);
 
   useEffect(()=>{ const t=setInterval(()=>setNowDisplay(getNowDisplay()),60000); return()=>clearInterval(t); },[]);
+
+  /* ── 드래그앤드롭 핸들러 (데스크탑 HTML5 DnD) ── */
+  const handleBedDragStart=useCallback((bedId)=>{dragBedIdRef.current=bedId;setDragBedId(bedId);},[]);
+  const handleBedDragOver=useCallback((bedId)=>{dropBedIdRef.current=bedId;setDropBedId(bedId);},[]);
+  const handleBedDragEnd=useCallback(()=>{dragBedIdRef.current=null;dropBedIdRef.current=null;setDragBedId(null);setDropBedId(null);},[]);
+  const handleBedDrop=useCallback((targetId)=>{
+    const srcId=dragBedIdRef.current;
+    if(srcId&&targetId&&srcId!==targetId){
+      updateBeds(prev=>{
+        const src=prev.find(b=>b.id===srcId);
+        const tgt=prev.find(b=>b.id===targetId);
+        if(!src||src.status==='empty')return prev;
+        return prev.map(b=>{
+          if(b.id===srcId)return{...b,status:tgt.status,patient:{...tgt.patient}};
+          if(b.id===targetId)return{...b,status:src.status,patient:{...src.patient}};
+          return b;
+        });
+      });
+    }
+    dragBedIdRef.current=null;dropBedIdRef.current=null;setDragBedId(null);setDropBedId(null);
+  },[updateBeds]);
+
+  /* ── 드래그앤드롭 핸들러 (모바일 터치 — 길게 누르기) ── */
+  const handleBedTouchStart=useCallback((e,bedId)=>{
+    const bedFound=beds.find(b=>b.id===bedId);
+    if(!bedFound||bedFound.status==='empty')return;
+    const touch=e.touches[0];
+    const startX=touch.clientX,startY=touch.clientY;
+    /* 스크롤 중 실수로 드래그 활성화 방지: 10px 초과 이동 시 타이머 취소 */
+    const cancelOnMove=(ev)=>{
+      const t=ev.touches[0];
+      if(Math.abs(t.clientX-startX)>10||Math.abs(t.clientY-startY)>10){
+        clearTimeout(longPressRef.current);
+        document.removeEventListener('touchmove',cancelOnMove);
+      }
+    };
+    document.addEventListener('touchmove',cancelOnMove,{passive:true});
+    longPressRef.current=setTimeout(()=>{
+      document.removeEventListener('touchmove',cancelOnMove);
+      touchDragRef.current=true;
+      dragBedIdRef.current=bedId;
+      setDragBedId(bedId);
+      setGhostPos({x:startX,y:startY,bedId});
+      if(navigator.vibrate)navigator.vibrate(40);
+      const onMove=(ev)=>{
+        if(!touchDragRef.current)return;
+        ev.preventDefault();
+        const t=ev.touches[0];
+        setGhostPos(g=>g?{...g,x:t.clientX,y:t.clientY}:null);
+        const el=document.elementFromPoint(t.clientX,t.clientY);
+        const card=el?.closest('[data-bed-id]');
+        const tid=card?.dataset?.bedId||null;
+        dropBedIdRef.current=tid;
+        setDropBedId(tid);
+      };
+      const onEnd=()=>{
+        document.removeEventListener('touchmove',onMove);
+        document.removeEventListener('touchend',onEnd);
+        const wasDrag=touchDragRef.current;
+        const tgtId=dropBedIdRef.current;
+        const srcId=dragBedIdRef.current;
+        if(wasDrag&&srcId&&tgtId&&srcId!==tgtId){
+          updateBeds(prev=>{
+            const src=prev.find(b=>b.id===srcId);
+            const tgt=prev.find(b=>b.id===tgtId);
+            if(!src||src.status==='empty')return prev;
+            return prev.map(b=>{
+              if(b.id===srcId)return{...b,status:tgt.status,patient:{...tgt.patient}};
+              if(b.id===tgtId)return{...b,status:src.status,patient:{...src.patient}};
+              return b;
+            });
+          });
+          document.addEventListener('click',ev2=>{ev2.stopPropagation();ev2.preventDefault();},{capture:true,once:true});
+        }
+        touchDragRef.current=false;
+        dragBedIdRef.current=null;dropBedIdRef.current=null;
+        setDragBedId(null);setDropBedId(null);setGhostPos(null);
+      };
+      document.addEventListener('touchmove',onMove,{passive:false});
+      document.addEventListener('touchend',onEnd);
+    },300);
+  },[beds,updateBeds]);
+  const handleBedTouchEnd=useCallback(()=>{clearTimeout(longPressRef.current);},[]);
 
   const stats=useMemo(()=>{ const c={all:beds.length}; Object.keys(STATUS).forEach(k=>c[k]=beds.filter(b=>b.status===k).length); return c; },[beds]);
   const filteredBeds=useMemo(()=>filter==='all'?beds:beds.filter(b=>b.status===filter),[beds,filter]);
@@ -1803,10 +1906,20 @@ function App(){
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
         {filteredBeds.map(bed=>(
           <BedCard key={bed.id} bed={bed} settings={settings} onClick={setSelectedBed} surgeries={surgeries}
+            dragBedId={dragBedId} dropBedId={dropBedId}
+            onDragStart={handleBedDragStart} onDragOver={handleBedDragOver} onDragEnd={handleBedDragEnd} onDrop={handleBedDrop}
+            onBedTouchStart={handleBedTouchStart} onBedTouchEnd={handleBedTouchEnd}
             onQuickDischarge={(b)=>updateBeds(prev=>prev.map(x=>x.id===b.id?{...x,status:'empty',patient:{...EMPTY_PATIENT}}:x))}/>
         ))}
       </div>
 
+      {ghostPos&&dragBedId&&(()=>{const gb=beds.find(b=>b.id===dragBedId);return gb?(
+        <div className="drag-ghost" style={{left:ghostPos.x-65,top:ghostPos.y-55}}>
+          <div style={{fontWeight:800,fontSize:15,color:'#111827'}}>{gb.bedNumber}호</div>
+          <div style={{fontSize:12,color:'#374151',marginTop:3}}>{gb.patient?.name||'이름 없음'}</div>
+          {gb.patient?.diagnosis&&<div style={{fontSize:11,color:'#9ca3af',marginTop:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:120}}>{gb.patient.diagnosis}</div>}
+        </div>
+      ):null;})()}
       {selectedBed&&<BedModal bed={selectedBed} onClose={()=>setSelectedBed(null)}
         onSave={(updated)=>{updateBeds(prev=>prev.map(b=>b.id===updated.id?updated:b));setSelectedBed(null);}}/>}
       {showNotice&&<NoticeModal onClose={()=>setShowNotice(false)} userId={userId} notices={notices} onNoticesChange={updateNotices}/>}
